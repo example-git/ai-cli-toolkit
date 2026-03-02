@@ -58,7 +58,7 @@ ignore = ["E501"]
 known-first-party = ["ai_cli"]
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.9"
 files = ["ai_cli", "tests"]
 ignore_missing_imports = true
 check_untyped_defs = true

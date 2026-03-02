@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/ai-cli-banner.png" alt="AI Cli Toolkit banner" width="980" />
+</p>
+
 # AI Cli Toolkit
 
 AI Cli Toolkit is a unified wrapper around multiple AI coding CLIs:
@@ -8,6 +12,16 @@ AI Cli Toolkit is a unified wrapper around multiple AI coding CLIs:
 - Gemini CLI
 
 It runs each tool through a managed mitmproxy layer to inject instructions consistently, handle per-tool request formats, and keep session tooling in one place.
+
+## Early Version Notice
+
+---
+
+This is an early `0.1.0` release. Features are still evolving, behavior may change, and some workflows may be incomplete or unstable.
+
+Use this project at your own risk. You are responsible for how you use it, including compliance with platform policies, terms of service, and applicable laws. The maintainers are not liable for misuse, data loss, account issues, service interruptions, or other consequences resulting from use of this tool.
+
+---
 
 ## Current Status
 
@@ -78,9 +92,14 @@ ai-cli <tool> [DIR] [args...]
 ai-cli menu
 ai-cli status
 ai-cli system [tool]
-ai-cli edit-signal
-ai-cli session [options]
+ai-cli system prompt [model]
+ai-cli prompt-edit <global|tool> [tool]
+ai-cli history [options]
+ai-cli session [options]  # alias for history
+ai-cli traffic [options]
+ai-cli cleanup [options]
 ai-cli update [tool|--all]
+ai-cli completions generate [--shell bash|zsh|all]
 ```
 
 Directory launch behavior:
@@ -143,7 +162,7 @@ In `ai-mux` sessions:
 
 ## Instruction Files
 
-Instruction layering is assembled at runtime:
+Instruction sources:
 
 1. Canary rule
 2. Base template (`templates/base_instructions.txt` or `~/.ai-cli/base_instructions.txt`)
@@ -151,14 +170,21 @@ Instruction layering is assembled at runtime:
 4. Project (`./.ai-cli/project_instructions.txt`)
 5. User (`~/.ai-cli/system_instructions.txt` or configured file)
 
+Runtime behavior:
+
+- `compose_instructions()` builds the 5-layer text for wrapper logging/hash visibility.
+- Addons inject using the global instructions file + canary rule.
+- For Codex, `~/.ai-cli/instructions/codex.txt` is also used as the `<DEVELOPER PROMPT>` section when `developer_instructions_mode=overwrite`.
+- Startup recent-context is appended to the canary rule unless disabled.
+
 Edit quickly:
 
 ```bash
 ai-cli system
 ai-cli system codex
+ai-cli prompt-edit global
+ai-cli prompt-edit tool codex
 ```
-
-If the wrapper is already running, `ai-cli edit-signal` triggers the edit signal path.
 
 ## Retention And Privacy
 
@@ -195,10 +221,16 @@ ai-cli session --all --grep "statusline"
 
 ## Shell Completions
 
-Installed by `install.sh`:
+`install.sh` copies completion source files from this repo into shell completion directories:
 
-- Zsh: `completions/_ai-cli`
-- Bash: `completions/ai-cli.bash`
+- Zsh source: `completions/_ai-cli` -> `~/.oh-my-zsh/custom/completions/_ai-cli` (or `~/.zsh/completions/_ai-cli`)
+- Bash source: `completions/ai-cli.bash` -> `~/.local/share/bash-completion/completions/ai-cli`
+
+You can also generate scripts directly:
+
+```bash
+ai-cli completions generate --shell all
+```
 
 ## Statusline
 
@@ -223,7 +255,18 @@ python3 -m ai_cli update --help
 bash -n install.sh
 ```
 
-CI is configured in `.github/workflows/ci.yml` and runs linting, typing, tests, and compile checks.
+CI is configured in `.github/workflows/ci.yml` and currently runs `pre-commit` and `pytest`.
+
+## Docs
+
+Additional user docs live under `docs/`:
+
+- `docs/index.md`
+- `docs/getting-started.md`
+- `docs/cli-reference.md`
+- `docs/config-reference.md`
+- `docs/operations-runbook.md`
+- `docs/privacy-data-handling.md`
 
 ## Troubleshooting
 

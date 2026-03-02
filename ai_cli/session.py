@@ -994,12 +994,12 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     chosen = sessions if args.all else [max(sessions, key=lambda s: s.mtime)]
 
-    messages: list[dict[str, Any]] = []
+    parsed_messages: list[dict[str, Any]] = []
     for session in chosen:
-        messages.extend(parse_session_file(session, show_tools=args.tools))
+        parsed_messages.extend(parse_session_file(session, show_tools=args.tools))
 
     if args.all:
-        messages.sort(
+        parsed_messages.sort(
             key=lambda m: (
                 _timestamp_for_sorting(str(m.get("timestamp", ""))),
                 str(m.get("file", "")),
@@ -1009,22 +1009,27 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     if args.grep:
         needle = args.grep.lower()
-        messages = [m for m in messages if needle in str(m.get("content", "")).lower()]
+        parsed_messages = [
+            m for m in parsed_messages if needle in str(m.get("content", "")).lower()
+        ]
 
     if args.tail > 0:
-        messages = messages[-args.tail :]
+        parsed_messages = parsed_messages[-args.tail :]
 
-    if not messages:
+    if not parsed_messages:
         print("No messages found matching your criteria.", file=sys.stderr)
         return 0
 
     latest = max(chosen, key=lambda s: s.mtime)
     print(f"Session file: {latest.path}", file=sys.stderr)
-    print(f"Showing {len(messages)} message(s) from {len(chosen)} session file(s).", file=sys.stderr)
+    print(
+        f"Showing {len(parsed_messages)} message(s) from {len(chosen)} session file(s).",
+        file=sys.stderr,
+    )
     print("---", file=sys.stderr)
 
     try:
-        for message in messages:
+        for message in parsed_messages:
             print(format_message(message, raw=args.raw))
             print()
     except BrokenPipeError:

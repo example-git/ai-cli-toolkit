@@ -7,9 +7,7 @@ from types import SimpleNamespace
 from ai_cli import main
 
 
-def test_run_tool_proxy_failure_falls_back_to_direct_launch(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_run_tool_proxy_failure_falls_back_to_direct_launch(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:8899")
     monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:8899")

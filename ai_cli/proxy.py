@@ -19,6 +19,7 @@ import threading
 import time
 from pathlib import Path
 from typing import Any
+from collections.abc import MutableMapping
 
 from ai_cli.log import append_log, fmt_cmd, tail_file, tail_text
 
@@ -59,7 +60,9 @@ def _read_pinned_wrapper_target(wrapper_path: Path) -> str | None:
     return None
 
 
-def _prepend_path_dir(path_dir: str, env: dict[str, str] | None = None) -> dict[str, str]:
+def _prepend_path_dir(
+    path_dir: str, env: MutableMapping[str, str] | None = None
+) -> MutableMapping[str, str]:
     """Prepend *path_dir* to PATH in *env* (or os.environ), deduplicated."""
     target = os.environ if env is None else env
     current = target.get("PATH", "")

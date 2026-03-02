@@ -23,9 +23,7 @@ def test_pin_mitmdump_binary_creates_pinned_wrapper(monkeypatch, tmp_path) -> No
     assert os.environ[proxy.PINNED_MITM_ENV] == str(pinned_bin)
 
 
-def test_pin_mitmdump_binary_does_not_write_self_recursive_wrapper(
-    monkeypatch, tmp_path
-) -> None:
+def test_pin_mitmdump_binary_does_not_write_self_recursive_wrapper(monkeypatch, tmp_path) -> None:
     pinned_dir = tmp_path / "bin"
     pinned_bin = pinned_dir / "mitmdump"
     monkeypatch.setattr(proxy, "PINNED_MITM_DIR", pinned_dir)
@@ -33,7 +31,7 @@ def test_pin_mitmdump_binary_does_not_write_self_recursive_wrapper(
 
     pinned_dir.mkdir(parents=True, exist_ok=True)
     pinned_bin.write_text(
-        "#!/usr/bin/env bash\nexec /opt/stable/mitmdump \"$@\"\n",
+        '#!/usr/bin/env bash\nexec /opt/stable/mitmdump "$@"\n',
         encoding="utf-8",
     )
     pinned_bin.chmod(0o755)
@@ -129,9 +127,7 @@ def test_start_proxy_raises_when_process_exits_early(monkeypatch, tmp_path) -> N
     assert any("mitmdump exited early." in line for line in logs)
 
 
-def test_resolve_mitmdump_recovers_from_stale_pinned_override(
-    monkeypatch, tmp_path
-) -> None:
+def test_resolve_mitmdump_recovers_from_stale_pinned_override(monkeypatch, tmp_path) -> None:
     pinned_dir = tmp_path / "bin"
     pinned_bin = pinned_dir / "mitmdump"
     good_bin = "/opt/homebrew/bin/mitmdump"

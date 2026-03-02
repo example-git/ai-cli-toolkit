@@ -37,7 +37,7 @@ from urllib.parse import parse_qsl, urlsplit
 try:
     import urwid
 except Exception:  # pragma: no cover - optional runtime dependency
-    urwid = None  # type: ignore[assignment]
+    urwid = None
 
 from ai_cli import traffic_db as _traffic_db
 
@@ -328,9 +328,9 @@ def _request_params(row: sqlite3.Row) -> list[tuple[str, str]]:
         if key in {"model", "stream", "temperature", "top_p", "max_tokens", "tool_choice",
                    "messages", "input", "contents", "tools"}:
             continue
-        value = body.get(key)
-        if isinstance(value, (str, int, float, bool)) or value is None:
-            params.append((f"body.{key}", str(value)))
+        body_value = body.get(key)
+        if isinstance(body_value, (str, int, float, bool)) or body_value is None:
+            params.append((f"body.{key}", str(body_value)))
             extra_count += 1
             if extra_count >= 8:
                 break
@@ -825,7 +825,7 @@ def _interactive_viewer_urwid(rows: list[sqlite3.Row], conn: sqlite3.Connection,
 
     def _refresh_rows() -> None:
         try:
-            selected = rows_walker.focus  # type: ignore[attr-defined]
+            selected = rows_walker.focus
         except Exception:
             selected = 0
         query, params = _build_query(
@@ -844,7 +844,7 @@ def _interactive_viewer_urwid(rows: list[sqlite3.Row], conn: sqlite3.Connection,
             row_attr = "has_data" if (row["req_body"] or row["resp_body"]) else None
             row_focus = "has_data_focus" if row_attr else "focus"
             wrapped = urwid.AttrMap(widget, row_attr, focus_map=row_focus)
-            wrapped._row_index = idx  # type: ignore[attr-defined]
+            wrapped._row_index = idx
             rows_walker.append(wrapped)
         if state["rows"]:
             rows_walker.set_focus(min(selected, len(state["rows"]) - 1))
