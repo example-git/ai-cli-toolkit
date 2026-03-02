@@ -1,0 +1,31 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^completions/generated/
+      - id: end-of-file-fixer
+        exclude: ^completions/generated/
+      - id: check-yaml
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.12.10
+    hooks:
+      - id: ruff-check
+        args: ["tests"]
+        pass_filenames: false
+      - id: ruff-format
+        args: ["tests"]
+        pass_filenames: false
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.18.1
+    hooks:
+      - id: mypy
+        args:
+          [
+            "--config-file=pyproject.toml",
+            "ai_cli/config.py",
+            "ai_cli/instructions.py",
+            "ai_cli/tools/__init__.py",
+            "tests",
+          ]
+        pass_filenames: false

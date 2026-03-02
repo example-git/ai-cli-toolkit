@@ -1,0 +1,42 @@
+# Reference materials (original scripts, not part of the project)
+reference/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Environment
+.env
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# Dev / scratch environments
+create/
+
+# Claude / Copilot session state
+.claude/
+.copilot/
+
+# Runtime artifacts
+*.log
+*.mitmdump.log
+/tmp/
+
+# Rust
+mux/target/
+ai_cli/bin/ai-mux

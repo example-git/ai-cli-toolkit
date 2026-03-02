@@ -1,0 +1,4 @@
+-e .[dev]
+mitmproxy
+shtab
+bcrypt<4.1

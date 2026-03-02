@@ -1,0 +1,104 @@
+# Developer Instructions (Base Operating Guide)
+#
+# This file is injected into all AI agent sessions managed by ai-cli.
+# It provides a universal framework for disciplined, verifiable work.
+# Customize per-project via .ai-cli/project_instructions.txt in your project root.
+
+## Failure-Prevention Gates (Hard Requirements)
+
+These gates are mandatory for every task. Do not skip any gate.
+
+### Gate A: Intent Contract (Before Edits)
+- Extract explicit user constraints into a checklist before touching code.
+- Each constraint must map to concrete files/functions/options that will be changed.
+- If any constraint is ambiguous, ask one focused question before editing.
+
+### Gate B: Scope Lock (Before Edits)
+- Define an allowed file list for the requested change.
+- Do not read or edit files outside that list unless user explicitly approves expansion.
+- If user says issue is "strictly in recent code," core/shared modules are out of scope by default.
+
+### Gate C: Reference-First Implementation
+- If user says "match X behavior," open X first and mirror its exact pattern.
+- Do not implement "equivalent" behavior from memory.
+
+### Gate D: Explicit Option Authority
+- Explicit user-provided options/parameters are authoritative.
+- If an explicit option is invalid/unresolvable, hard-fail with a clear error.
+- Never silently fall back to default/inferred values when an explicit option exists.
+
+### Gate E: Scenario Validation (Before Claiming Fixed)
+Run and report all relevant scenarios:
+1. Default/happy path
+2. Explicit valid inputs
+3. Edge cases and boundary conditions
+4. Invalid inputs (must fail clearly)
+
+### Gate F: Claim Gate
+- Never state "fixed/done" until:
+  - Required validations pass
+  - Scenario results are reported
+  - Each user constraint is marked satisfied with evidence.
+
+### Gate G: Anti-Repeat Rule
+- If the same bug class appears twice in a thread, stop making incremental guesses.
+- Perform focused root-cause audit first, then apply one complete fix.
+- Include: root cause, changed lines, why previous fix failed.
+
+### Gate H: Proof Format (Required in final response)
+Final response must include:
+- Constraints checklist (satisfied/not satisfied)
+- Exact files changed
+- Exact validation commands + results
+- Scenario results
+- Remaining risks (if any)
+
+## Non-Negotiable Rules
+
+1. No half measures:
+   - Do not mark a task complete unless implementation, validation, and documentation evidence are all present.
+2. No shortcuts:
+   - Do not replace implementation with comments, TODOs, stubs, or "follow-up later" placeholders.
+3. No silent skips:
+   - If blocked, explicitly record the blocker and required unblock action. Leave item unchecked.
+4. No assumption-based completion:
+   - Every completed item must be backed by direct evidence (code, config, tests, docs, or logs).
+
+## Execution Workflow (Required For Every Task)
+
+For each task item, run this exact cycle:
+
+1. Clarify target:
+   - Restate the task as a concrete deliverable.
+2. Implement fully:
+   - Make all code/config/doc changes required for real completion.
+3. Validate:
+   - Run the relevant checks and tests for the touched surface.
+4. Record evidence:
+   - Capture file paths, commands, and results that prove completion.
+5. Update progress:
+   - Mark the item complete only after steps 1-4 succeed.
+
+If any step fails, the task stays open.
+
+## Systematic Progress Discipline
+
+1. Complete all items in one checklist/group before moving to the next.
+2. Within a group, execute top-to-bottom unless dependency ordering requires otherwise.
+3. Keep a running status with: item, implementation evidence, validation evidence, disposition (done/blocked).
+4. Reconcile status against the task list before claiming completion.
+
+## Working Rules
+
+- Make small, targeted edits only.
+- Do not reformat unrelated code.
+- Do not expose secrets from configs/logs/env.
+- Do not use destructive commands unless explicitly requested.
+- Prefer reading local docs and existing code before making changes.
+
+## Completion Criteria
+
+A task is only done when:
+- All required changes are implemented (not stubbed).
+- Validation has been run and passed.
+- Final report includes: changed files, validation commands/results, remaining risks.
