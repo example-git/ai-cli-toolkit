@@ -10,6 +10,7 @@ loads it in its own Python context.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,94 @@ def _compose_text(base_text: str, canary_rule: str) -> str:
     if canary and base:
         return f"{canary}\n\n{base}"
     return canary or base
+
+
+def _normalize_developer_mode(value: str) -> str:
+    mode = (value or "").strip().lower()
+    if mode in {"overwrite", "append", "prepend"}:
+        return mode
+    return "overwrite"
+
+
+def _section(tag: str, text: str) -> str:
+    body = (text or "").strip()
+    if not body:
+        return ""
+    return f"<{tag}>\n{body}\n</{tag}>"
+
+
+def _compose_custom_sections(global_guidelines: str, developer_prompt: str) -> str:
+    blocks: list[str] = []
+    global_block = _section("GLOBAL GUIDELINES", global_guidelines)
+    if global_block:
+        blocks.append(global_block)
+    developer_block = _section("DEVELOPER PROMPT", developer_prompt)
+    if developer_block:
+        blocks.append(developer_block)
+    return "\n\n".join(blocks).strip()
+
+
+_RECURRING_MODEL_RE = re.compile(
+    r"(?is)<RECURRING MODEL PROMPT>\s*(.*?)\s*</RECURRING MODEL PROMPT>"
+)
+
+
+def _strip_custom_sections(text: str) -> str:
+    stripped = text or ""
+    for tag in (
+        "GLOBAL GUIDELINES",
+        "DEVELOPER PROMPT",
+        "RECURRING MODEL PROMPT",
+        "RECURRING PERMISSIONS",
+        "RECURRING APPS",
+        "RECURRING COLLABORATION MODE",
+    ):
+        stripped = re.sub(
+            rf"(?is)<{re.escape(tag)}>.*?</{re.escape(tag)}>",
+            "",
+            stripped,
+        )
+    return stripped.strip()
+
+
+def _extract_recurring_model_prompt(existing_text: str) -> str:
+    match = _RECURRING_MODEL_RE.search(existing_text or "")
+    if match:
+        return match.group(1).strip()
+    return _strip_custom_sections(existing_text)
+
+
+def _compose_overwrite_sections(
+    global_guidelines: str,
+    developer_prompt: str,
+    recurring_model_prompt: str,
+) -> str:
+    blocks: list[str] = []
+    custom = _compose_custom_sections(global_guidelines, developer_prompt)
+    if custom:
+        blocks.append(custom)
+    recurring = _section("RECURRING MODEL PROMPT", recurring_model_prompt)
+    if recurring:
+        blocks.append(recurring)
+    return "\n\n".join(blocks).strip()
+
+
+def _merge_text(existing: str, injected: str, mode: str) -> str:
+    base = (existing or "").strip()
+    add = (injected or "").strip()
+    if not add:
+        return base
+    if mode == "overwrite":
+        return add
+    if not base:
+        return add
+    if mode == "append":
+        if base == add or base.endswith(add):
+            return base
+        return f"{base}\n\n{add}"
+    if base == add or base.startswith(add):
+        return base
+    return f"{add}\n\n{base}"
 
 
 def _resolve_base_text(inline_text: str, file_path: str) -> tuple[str, str]:
@@ -69,6 +158,8 @@ if True:  # always define — mitmproxy loads this as a module
                               "Path to system instructions text file.")
             loader.add_option("system_instructions_text", str, "",
                               "Literal system instructions text.")
+            loader.add_option("tool_instructions_text", str, "",
+                              "Literal tool-specific instructions text.")
             loader.add_option("canary_rule", str,
                               "CANARY RULE: Prefix every assistant response with: DEV:",
                               "Canary instruction prepended before system instructions.")
@@ -80,6 +171,8 @@ if True:  # always define — mitmproxy loads this as a module
                               "Passthrough mode - no injection, just log requests.")
             loader.add_option("debug_requests", bool, False,
                               "Log full request bodies for debugging.")
+            loader.add_option("developer_instructions_mode", str, "overwrite",
+                              "Instruction merge mode: overwrite|append|prepend.")
 
         @staticmethod
         def _load_instructions_text() -> str:
@@ -102,6 +195,9 @@ if True:  # always define — mitmproxy loads this as a module
             log_file = getattr(ctx.options, "wrapper_log_file", "") or ""
             passthrough = getattr(ctx.options, "passthrough", False)
             debug = getattr(ctx.options, "debug_requests", False)
+            merge_mode = _normalize_developer_mode(
+                getattr(ctx.options, "developer_instructions_mode", "overwrite") or "overwrite"
+            )
 
             _log(log_file, f"Addon saw request: method={flow.request.method} path={flow.request.path}")
 
@@ -133,9 +229,11 @@ if True:  # always define — mitmproxy loads this as a module
                 _log(log_file, "Passthrough mode - not injecting")
                 return
 
-            system_text = self._load_instructions_text()
-            if not system_text:
-                _log(log_file, "Addon skip: system instructions empty")
+            global_guidelines = self._load_instructions_text()
+            developer_prompt = (getattr(ctx.options, "tool_instructions_text", "") or "").strip()
+            custom_text = _compose_custom_sections(global_guidelines, developer_prompt)
+            if not custom_text:
+                _log(log_file, "Addon skip: layered sections are empty")
                 return
 
             # Save original backup (once)
@@ -156,12 +254,25 @@ if True:  # always define — mitmproxy loads this as a module
                 if "software engineering tasks" not in existing_system and "interactive CLI tool" not in existing_system:
                     _log(log_file, "Addon skip: not main conversation (internal request)")
                     return
-                if system_text in existing_system:
-                    _log(log_file, "Addon skip: system text already present")
-                    return
                 _save_backup(existing_system)
-                body["system"] = f"{system_text}\n\n{existing_system}"
-                _log(log_file, f"Addon prepending to string system (original was {len(existing_system)} chars)")
+                recurring_model = _extract_recurring_model_prompt(existing_system)
+                overwrite_text = _compose_overwrite_sections(
+                    global_guidelines,
+                    developer_prompt,
+                    recurring_model,
+                )
+                merged = _merge_text(existing_system, overwrite_text, merge_mode)
+                if merged == existing_system:
+                    _log(log_file, f"Addon skip: system already matches (mode={merge_mode})")
+                    return
+                body["system"] = merged
+                _log(
+                    log_file,
+                    (
+                        "Addon merged string system "
+                        f"(mode={merge_mode}, injected_chars={len(overwrite_text)})"
+                    ),
+                )
             elif isinstance(existing_system, list):
                 existing_text = ""
                 main_idx = None
@@ -174,20 +285,33 @@ if True:  # always define — mitmproxy loads this as a module
                 if main_idx is None:
                     _log(log_file, "Addon skip: not main conversation (internal request)")
                     return
-                if system_text in existing_text:
-                    _log(log_file, "Addon skip: system text already present")
-                    return
                 target_block = existing_system[main_idx]
                 original_text = target_block.get("text", "")
                 _save_backup(existing_text)
-                target_block["text"] = f"{system_text}\n\n{original_text}"
-                _log(log_file, f"Addon prepended to block {main_idx} (original was {len(original_text)} chars)")
+                recurring_model = _extract_recurring_model_prompt(original_text)
+                overwrite_text = _compose_overwrite_sections(
+                    global_guidelines,
+                    developer_prompt,
+                    recurring_model,
+                )
+                merged = _merge_text(original_text, overwrite_text, merge_mode)
+                if merged == original_text:
+                    _log(log_file, f"Addon skip: block already matches (mode={merge_mode})")
+                    return
+                target_block["text"] = merged
+                _log(
+                    log_file,
+                    (
+                        f"Addon merged block {main_idx} "
+                        f"(mode={merge_mode}, injected_chars={len(overwrite_text)})"
+                    ),
+                )
             else:
                 _log(log_file, f"Addon skip: unknown system type ({type(existing_system).__name__})")
                 return
 
             flow.request.set_text(json.dumps(body))
-            _log(log_file, f"Addon injected system instructions (chars={len(system_text)})")
+            _log(log_file, "Addon injected layered system sections")
 
         def response(self, flow: http.HTTPFlow) -> None:
             target = getattr(ctx.options, "target_path", "/v1/messages") or ""

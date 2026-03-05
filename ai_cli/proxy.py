@@ -394,6 +394,7 @@ def build_mitmdump_cmd(
     wrapper_log_file: str,
     instructions_file: str = "",
     instructions_text: str = "",
+    tool_instructions_text: str = "",
     canary_rule: str = "",
     passthrough: bool = False,
     debug_requests: bool = False,
@@ -427,6 +428,8 @@ def build_mitmdump_cmd(
         cmd.extend(["--set", f"system_instructions_file={instructions_file}"])
     if instructions_text:
         cmd.extend(["--set", f"system_instructions_text={instructions_text}"])
+    if tool_instructions_text:
+        cmd.extend(["--set", f"tool_instructions_text={tool_instructions_text}"])
     if canary_rule:
         cmd.extend(["--set", f"canary_rule={canary_rule}"])
     if passthrough:

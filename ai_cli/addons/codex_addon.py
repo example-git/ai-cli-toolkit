@@ -222,6 +222,8 @@ class DeveloperInstructionInjector:
                           "Path to developer instructions text file.")
         loader.add_option("system_instructions_text", str, "",
                           "Literal developer instructions text.")
+        loader.add_option("tool_instructions_text", str, "",
+                  "Literal tool-specific instructions text.")
         loader.add_option("canary_rule", str,
                           "CANARY RULE: Prefix every assistant response with: DEV:",
                           "Canary instruction prepended before developer instructions.")
@@ -245,13 +247,17 @@ class DeveloperInstructionInjector:
 
     @staticmethod
     def _load_global_guidelines_text() -> str:
+        inline = (getattr(ctx.options, "system_instructions_text", "") or "").strip()
         path_val = getattr(ctx.options, "system_instructions_file", "") or ""
         canary = (getattr(ctx.options, "canary_rule", "") or "").strip()
-        _, base = _resolve_base_text("", path_val)
+        _, base = _resolve_base_text(inline, path_val)
         return _compose_text(base, canary)
 
     @staticmethod
     def _load_developer_prompt_text() -> str:
+        inline = (getattr(ctx.options, "tool_instructions_text", "") or "").strip()
+        if inline:
+            return inline
         path_val = (getattr(ctx.options, "codex_developer_prompt_file", "") or "").strip()
         if not path_val:
             return ""

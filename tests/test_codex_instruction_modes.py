@@ -48,6 +48,20 @@ def test_build_mitmdump_cmd_sets_codex_prompt_file_option() -> None:
     assert "codex_developer_prompt_file=/tmp/codex.txt" in cmd
 
 
+def test_build_mitmdump_cmd_sets_tool_instructions_text_option() -> None:
+    cmd = build_mitmdump_cmd(
+        mitmdump_bin="mitmdump",
+        host="127.0.0.1",
+        port=8080,
+        addon_paths=["/tmp/addon.py"],
+        target_path="/backend-api/codex/responses",
+        wrapper_log_file="/tmp/wrapper.log",
+        tool_instructions_text="<DEVELOPER PROMPT>layer</DEVELOPER PROMPT>",
+    )
+
+    assert "tool_instructions_text=<DEVELOPER PROMPT>layer</DEVELOPER PROMPT>" in cmd
+
+
 def test_parse_wrapper_overrides_rejects_invalid_developer_mode() -> None:
     with pytest.raises(SystemExit):
         parse_wrapper_overrides(

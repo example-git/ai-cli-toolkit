@@ -379,6 +379,17 @@ def run_tool(tool_name: str, args: list[str]) -> int:
         global_prompt_text = resolve_user_instructions(instructions_file)
 
     tool_prompt_file = _resolve_tool_prompt_file(config, tool_name)
+    tool_prompt_text = resolve_user_instructions(tool_prompt_file)
+
+    # Build layered global guidelines text (canary + base + project + user).
+    # Tool-specific prompt text is passed separately and inserted as its own section.
+    layered_global_text = compose_instructions(
+        canary_rule=runtime_canary,
+        tool_name="",
+        instructions_text=global_prompt_text,
+        instructions_file=instructions_file,
+        project_cwd=str(effective_cwd),
+    )
 
     effective_text = compose_instructions(
         canary_rule=runtime_canary,
@@ -427,7 +438,9 @@ def run_tool(tool_name: str, args: list[str]) -> int:
             target_path=spec.target_path,
             wrapper_log_file=str(log_path),
             instructions_file=instructions_file,
-            canary_rule=runtime_canary,
+            instructions_text=layered_global_text,
+            tool_instructions_text=tool_prompt_text,
+            canary_rule="",
             passthrough=(
                 wrapper_overrides["passthrough"]
                 if wrapper_overrides["passthrough"] is not None
