@@ -29,11 +29,11 @@ _codex() {
 '-s+[Select the sandbox policy to use when executing model-generated shell commands]:SANDBOX_MODE:(read-only workspace-write danger-full-access)' \
 '--sandbox=[Select the sandbox policy to use when executing model-generated shell commands]:SANDBOX_MODE:(read-only workspace-write danger-full-access)' \
 '-a+[Configure when the model requires human approval before executing a command]:APPROVAL_POLICY:((untrusted\:"Only run "trusted" commands (e.g. ls, cat, sed) without asking for user approval. Will escalate to the user if the model proposes a command that is not in the "trusted" set"
-on-failure\:"DEPRECATED\: Run all commands without asking for user approval. Only asks for approval if a command fails to execute, in which case it will escalate to the user to ask for un-sandboxed execution. Prefer \`on-request\` for interactive runs or \`never\` for non-interactive runs"
+on-failure\:"Run all commands without asking for user approval. Only asks for approval if a command fails to execute, in which case it will escalate to the user to ask for un-sandboxed execution"
 on-request\:"The model decides when to ask the user for approval"
 never\:"Never ask for user approval Execution failures are immediately returned to the model"))' \
 '--ask-for-approval=[Configure when the model requires human approval before executing a command]:APPROVAL_POLICY:((untrusted\:"Only run "trusted" commands (e.g. ls, cat, sed) without asking for user approval. Will escalate to the user if the model proposes a command that is not in the "trusted" set"
-on-failure\:"DEPRECATED\: Run all commands without asking for user approval. Only asks for approval if a command fails to execute, in which case it will escalate to the user to ask for un-sandboxed execution. Prefer \`on-request\` for interactive runs or \`never\` for non-interactive runs"
+on-failure\:"Run all commands without asking for user approval. Only asks for approval if a command fails to execute, in which case it will escalate to the user to ask for un-sandboxed execution"
 on-request\:"The model decides when to ask the user for approval"
 never\:"Never ask for user approval Execution failures are immediately returned to the model"))' \
 '-C+[Tell the agent to use the specified directory as its working root]:DIR:_files' \
@@ -85,7 +85,6 @@ _arguments "${_arguments_options[@]}" : \
 '(--full-auto)--dangerously-bypass-approvals-and-sandbox[Skip all confirmation prompts and execute commands without sandboxing. EXTREMELY DANGEROUS. Intended solely for running in environments that are externally sandboxed]' \
 '--skip-git-repo-check[Allow running Codex outside a Git repository]' \
 '--ephemeral[Run without persisting session files to disk]' \
-'--progress-cursor[Force cursor-based progress updates in exec mode]' \
 '--json[Print events to stdout as JSONL]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
@@ -108,8 +107,6 @@ _arguments "${_arguments_options[@]}" : \
 '*--image=[Optional image(s) to attach to the prompt sent after resuming]:FILE:_files' \
 '-m+[Model the agent should use]:MODEL:_default' \
 '--model=[Model the agent should use]:MODEL:_default' \
-'-o+[Specifies file where the last message from the agent should be written]:FILE:_files' \
-'--output-last-message=[Specifies file where the last message from the agent should be written]:FILE:_files' \
 '*-c+[Override a configuration value that would otherwise be loaded from \`~/.codex/config.toml\`. Use a dotted path (\`foo.bar.baz\`) to override nested values. The \`value\` portion is parsed as TOML. If it fails to parse as TOML, the raw string is used as a literal]:key=value:_default' \
 '*--config=[Override a configuration value that would otherwise be loaded from \`~/.codex/config.toml\`. Use a dotted path (\`foo.bar.baz\`) to override nested values. The \`value\` portion is parsed as TOML. If it fails to parse as TOML, the raw string is used as a literal]:key=value:_default' \
 '*--enable=[Enable a feature (repeatable). Equivalent to \`-c features.<name>=true\`]:FEATURE:_default' \
@@ -134,8 +131,6 @@ _arguments "${_arguments_options[@]}" : \
 '--title=[Optional commit title to display in the review summary]:TITLE:_default' \
 '-m+[Model the agent should use]:MODEL:_default' \
 '--model=[Model the agent should use]:MODEL:_default' \
-'-o+[Specifies file where the last message from the agent should be written]:FILE:_files' \
-'--output-last-message=[Specifies file where the last message from the agent should be written]:FILE:_files' \
 '*-c+[Override a configuration value that would otherwise be loaded from \`~/.codex/config.toml\`. Use a dotted path (\`foo.bar.baz\`) to override nested values. The \`value\` portion is parsed as TOML. If it fails to parse as TOML, the raw string is used as a literal]:key=value:_default' \
 '*--config=[Override a configuration value that would otherwise be loaded from \`~/.codex/config.toml\`. Use a dotted path (\`foo.bar.baz\`) to override nested values. The \`value\` portion is parsed as TOML. If it fails to parse as TOML, the raw string is used as a literal]:key=value:_default' \
 '*--enable=[Enable a feature (repeatable). Equivalent to \`-c features.<name>=true\`]:FEATURE:_default' \
@@ -210,7 +205,6 @@ _arguments "${_arguments_options[@]}" : \
 '(--full-auto)--dangerously-bypass-approvals-and-sandbox[Skip all confirmation prompts and execute commands without sandboxing. EXTREMELY DANGEROUS. Intended solely for running in environments that are externally sandboxed]' \
 '--skip-git-repo-check[Allow running Codex outside a Git repository]' \
 '--ephemeral[Run without persisting session files to disk]' \
-'--progress-cursor[Force cursor-based progress updates in exec mode]' \
 '--json[Print events to stdout as JSONL]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
@@ -233,8 +227,6 @@ _arguments "${_arguments_options[@]}" : \
 '*--image=[Optional image(s) to attach to the prompt sent after resuming]:FILE:_files' \
 '-m+[Model the agent should use]:MODEL:_default' \
 '--model=[Model the agent should use]:MODEL:_default' \
-'-o+[Specifies file where the last message from the agent should be written]:FILE:_files' \
-'--output-last-message=[Specifies file where the last message from the agent should be written]:FILE:_files' \
 '*-c+[Override a configuration value that would otherwise be loaded from \`~/.codex/config.toml\`. Use a dotted path (\`foo.bar.baz\`) to override nested values. The \`value\` portion is parsed as TOML. If it fails to parse as TOML, the raw string is used as a literal]:key=value:_default' \
 '*--config=[Override a configuration value that would otherwise be loaded from \`~/.codex/config.toml\`. Use a dotted path (\`foo.bar.baz\`) to override nested values. The \`value\` portion is parsed as TOML. If it fails to parse as TOML, the raw string is used as a literal]:key=value:_default' \
 '*--enable=[Enable a feature (repeatable). Equivalent to \`-c features.<name>=true\`]:FEATURE:_default' \
@@ -259,8 +251,6 @@ _arguments "${_arguments_options[@]}" : \
 '--title=[Optional commit title to display in the review summary]:TITLE:_default' \
 '-m+[Model the agent should use]:MODEL:_default' \
 '--model=[Model the agent should use]:MODEL:_default' \
-'-o+[Specifies file where the last message from the agent should be written]:FILE:_files' \
-'--output-last-message=[Specifies file where the last message from the agent should be written]:FILE:_files' \
 '*-c+[Override a configuration value that would otherwise be loaded from \`~/.codex/config.toml\`. Use a dotted path (\`foo.bar.baz\`) to override nested values. The \`value\` portion is parsed as TOML. If it fails to parse as TOML, the raw string is used as a literal]:key=value:_default' \
 '*--config=[Override a configuration value that would otherwise be loaded from \`~/.codex/config.toml\`. Use a dotted path (\`foo.bar.baz\`) to override nested values. The \`value\` portion is parsed as TOML. If it fails to parse as TOML, the raw string is used as a literal]:key=value:_default' \
 '*--enable=[Enable a feature (repeatable). Equivalent to \`-c features.<name>=true\`]:FEATURE:_default' \
@@ -622,18 +612,6 @@ esac
     ;;
 esac
 ;;
-(app)
-_arguments "${_arguments_options[@]}" : \
-'--download-url=[Override the macOS DMG download URL (advanced)]:DOWNLOAD_URL:_default' \
-'*-c+[Override a configuration value that would otherwise be loaded from \`~/.codex/config.toml\`. Use a dotted path (\`foo.bar.baz\`) to override nested values. The \`value\` portion is parsed as TOML. If it fails to parse as TOML, the raw string is used as a literal]:key=value:_default' \
-'*--config=[Override a configuration value that would otherwise be loaded from \`~/.codex/config.toml\`. Use a dotted path (\`foo.bar.baz\`) to override nested values. The \`value\` portion is parsed as TOML. If it fails to parse as TOML, the raw string is used as a literal]:key=value:_default' \
-'*--enable=[Enable a feature (repeatable). Equivalent to \`-c features.<name>=true\`]:FEATURE:_default' \
-'*--disable=[Disable a feature (repeatable). Equivalent to \`-c features.<name>=false\`]:FEATURE:_default' \
-'-h[Print help (see more with '\''--help'\'')]' \
-'--help[Print help (see more with '\''--help'\'')]' \
-'::path -- Workspace path to open in Codex Desktop:_files' \
-&& ret=0
-;;
 (completion)
 _arguments "${_arguments_options[@]}" : \
 '*-c+[Override a configuration value that would otherwise be loaded from \`~/.codex/config.toml\`. Use a dotted path (\`foo.bar.baz\`) to override nested values. The \`value\` portion is parsed as TOML. If it fails to parse as TOML, the raw string is used as a literal]:key=value:_default' \
@@ -974,11 +952,11 @@ _arguments "${_arguments_options[@]}" : \
 '-s+[Select the sandbox policy to use when executing model-generated shell commands]:SANDBOX_MODE:(read-only workspace-write danger-full-access)' \
 '--sandbox=[Select the sandbox policy to use when executing model-generated shell commands]:SANDBOX_MODE:(read-only workspace-write danger-full-access)' \
 '-a+[Configure when the model requires human approval before executing a command]:APPROVAL_POLICY:((untrusted\:"Only run "trusted" commands (e.g. ls, cat, sed) without asking for user approval. Will escalate to the user if the model proposes a command that is not in the "trusted" set"
-on-failure\:"DEPRECATED\: Run all commands without asking for user approval. Only asks for approval if a command fails to execute, in which case it will escalate to the user to ask for un-sandboxed execution. Prefer \`on-request\` for interactive runs or \`never\` for non-interactive runs"
+on-failure\:"Run all commands without asking for user approval. Only asks for approval if a command fails to execute, in which case it will escalate to the user to ask for un-sandboxed execution"
 on-request\:"The model decides when to ask the user for approval"
 never\:"Never ask for user approval Execution failures are immediately returned to the model"))' \
 '--ask-for-approval=[Configure when the model requires human approval before executing a command]:APPROVAL_POLICY:((untrusted\:"Only run "trusted" commands (e.g. ls, cat, sed) without asking for user approval. Will escalate to the user if the model proposes a command that is not in the "trusted" set"
-on-failure\:"DEPRECATED\: Run all commands without asking for user approval. Only asks for approval if a command fails to execute, in which case it will escalate to the user to ask for un-sandboxed execution. Prefer \`on-request\` for interactive runs or \`never\` for non-interactive runs"
+on-failure\:"Run all commands without asking for user approval. Only asks for approval if a command fails to execute, in which case it will escalate to the user to ask for un-sandboxed execution"
 on-request\:"The model decides when to ask the user for approval"
 never\:"Never ask for user approval Execution failures are immediately returned to the model"))' \
 '-C+[Tell the agent to use the specified directory as its working root]:DIR:_files' \
@@ -1015,11 +993,11 @@ _arguments "${_arguments_options[@]}" : \
 '-s+[Select the sandbox policy to use when executing model-generated shell commands]:SANDBOX_MODE:(read-only workspace-write danger-full-access)' \
 '--sandbox=[Select the sandbox policy to use when executing model-generated shell commands]:SANDBOX_MODE:(read-only workspace-write danger-full-access)' \
 '-a+[Configure when the model requires human approval before executing a command]:APPROVAL_POLICY:((untrusted\:"Only run "trusted" commands (e.g. ls, cat, sed) without asking for user approval. Will escalate to the user if the model proposes a command that is not in the "trusted" set"
-on-failure\:"DEPRECATED\: Run all commands without asking for user approval. Only asks for approval if a command fails to execute, in which case it will escalate to the user to ask for un-sandboxed execution. Prefer \`on-request\` for interactive runs or \`never\` for non-interactive runs"
+on-failure\:"Run all commands without asking for user approval. Only asks for approval if a command fails to execute, in which case it will escalate to the user to ask for un-sandboxed execution"
 on-request\:"The model decides when to ask the user for approval"
 never\:"Never ask for user approval Execution failures are immediately returned to the model"))' \
 '--ask-for-approval=[Configure when the model requires human approval before executing a command]:APPROVAL_POLICY:((untrusted\:"Only run "trusted" commands (e.g. ls, cat, sed) without asking for user approval. Will escalate to the user if the model proposes a command that is not in the "trusted" set"
-on-failure\:"DEPRECATED\: Run all commands without asking for user approval. Only asks for approval if a command fails to execute, in which case it will escalate to the user to ask for un-sandboxed execution. Prefer \`on-request\` for interactive runs or \`never\` for non-interactive runs"
+on-failure\:"Run all commands without asking for user approval. Only asks for approval if a command fails to execute, in which case it will escalate to the user to ask for un-sandboxed execution"
 on-request\:"The model decides when to ask the user for approval"
 never\:"Never ask for user approval Execution failures are immediately returned to the model"))' \
 '-C+[Tell the agent to use the specified directory as its working root]:DIR:_files' \
@@ -1414,10 +1392,6 @@ _arguments "${_arguments_options[@]}" : \
     ;;
 esac
 ;;
-(app)
-_arguments "${_arguments_options[@]}" : \
-&& ret=0
-;;
 (completion)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
@@ -1611,10 +1585,9 @@ _codex_commands() {
 'review:Run a code review non-interactively' \
 'login:Manage login' \
 'logout:Remove stored authentication credentials' \
-'mcp:Manage external MCP servers for Codex' \
-'mcp-server:Start Codex as an MCP server (stdio)' \
+'mcp:\[experimental\] Run Codex as an MCP server and manage MCP servers' \
+'mcp-server:\[experimental\] Run the Codex MCP server (stdio transport)' \
 'app-server:\[experimental\] Run the app server or related tooling' \
-'app:Launch the Codex desktop app (downloads the macOS installer if missing)' \
 'completion:Generate shell completion scripts' \
 'sandbox:Run commands within a Codex-provided sandbox' \
 'debug:Debugging tools' \
@@ -1630,11 +1603,6 @@ _codex_commands() {
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'codex commands' commands "$@"
-}
-(( $+functions[_codex__app_commands] )) ||
-_codex__app_commands() {
-    local commands; commands=()
-    _describe -t commands 'codex app commands' commands "$@"
 }
 (( $+functions[_codex__app-server_commands] )) ||
 _codex__app-server_commands() {
@@ -1973,10 +1941,9 @@ _codex__help_commands() {
 'review:Run a code review non-interactively' \
 'login:Manage login' \
 'logout:Remove stored authentication credentials' \
-'mcp:Manage external MCP servers for Codex' \
-'mcp-server:Start Codex as an MCP server (stdio)' \
+'mcp:\[experimental\] Run Codex as an MCP server and manage MCP servers' \
+'mcp-server:\[experimental\] Run the Codex MCP server (stdio transport)' \
 'app-server:\[experimental\] Run the app server or related tooling' \
-'app:Launch the Codex desktop app (downloads the macOS installer if missing)' \
 'completion:Generate shell completion scripts' \
 'sandbox:Run commands within a Codex-provided sandbox' \
 'debug:Debugging tools' \
@@ -1991,11 +1958,6 @@ _codex__help_commands() {
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'codex help commands' commands "$@"
-}
-(( $+functions[_codex__help__app_commands] )) ||
-_codex__help__app_commands() {
-    local commands; commands=()
-    _describe -t commands 'codex help app commands' commands "$@"
 }
 (( $+functions[_codex__help__app-server_commands] )) ||
 _codex__help__app-server_commands() {
@@ -2467,4 +2429,3 @@ if [ "$funcstack[1]" = "_codex" ]; then
 else
     compdef _codex codex
 fi
-WARNING: failed to clean up stale arg0 temp dirs: Permission denied (os error 13)
