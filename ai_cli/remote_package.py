@@ -911,6 +911,37 @@ def push_package(
             check=False,
         )
 
+        # Also push tool config/auth files to the REAL home on the remote.
+        # Some tools (e.g. claude) resolve $HOME via getpwuid/passwd and
+        # ignore our HOME override, so credentials must also live there.
+        tool_pairs = _TOOL_PACKAGE_FILES.get(package.tool_name, [])
+        if tool_pairs and package.real_home:
+            real_staging = Path(staging) / "__real_home__"
+            real_staging.mkdir(exist_ok=True)
+            has_files = False
+            for local_raw, remote_rel in tool_pairs:
+                src = Path(local_raw).expanduser()
+                if src.is_file():
+                    dest = real_staging / remote_rel
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(str(src), str(dest))
+                    has_files = True
+            if has_files:
+                subprocess.run(
+                    [
+                        rsync_bin,
+                        "-az",
+                        f"--chmod={_RSYNC_CHMOD}",
+                        "-e",
+                        _SSH_OPTS,
+                        str(real_staging) + "/",
+                        f"{remote_spec.ssh_target}:{package.real_home}/",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+
 
 # ---------------------------------------------------------------------------
 # Probe

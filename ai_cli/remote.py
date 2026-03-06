@@ -153,8 +153,24 @@ def resolve_remote_tool_env(
         "print(\":\".join(p for p in os.environ.get(\"PATH\", \"\").split(\":\") "
         "if p and p != drop))"
     )
-    tool_q = _shlex.quote(tool_name)
+    # Resolve tilde-prefixed binaries to $REAL_HOME and also try bare name
+    bare_name = Path(tool_name).name  # e.g. "claude"
+    if tool_name.startswith("~/"):
+        explicit_path = "$REAL_HOME/" + tool_name[2:]
+    elif tool_name.startswith("$HOME/"):
+        explicit_path = "$REAL_HOME/" + tool_name[6:]
+    else:
+        explicit_path = ""
+    bare_q = _shlex.quote(bare_name)
     home_q = _shlex.quote(real_home)
+    # Try command -v on the bare name first; fall back to explicit tilde-expanded path
+    if explicit_path:
+        resolve_expr = (
+            f'_ai_cli_bin=$(command -v {bare_q} 2>/dev/null || true)'
+            f' ; [ -z "$_ai_cli_bin" ] && [ -x {explicit_path} ] && _ai_cli_bin={explicit_path}'
+        )
+    else:
+        resolve_expr = f'_ai_cli_bin=$(command -v {bare_q} 2>/dev/null || true)'
     remote_cmd = (
         f"export REAL_HOME={home_q}"
         " ; . /etc/profile 2>/dev/null"
@@ -169,7 +185,7 @@ def resolve_remote_tool_env(
         f" ; export PATH=$(python3 -c {_shlex.quote(path_py)})"
         " ; unalias codex claude gemini copilot 2>/dev/null || true"
         " ; hash -r 2>/dev/null || true"
-        f" ; _ai_cli_bin=$(command -v {tool_q} 2>/dev/null || true)"
+        f" ; {resolve_expr}"
         " ; printf 'AI_CLI_REMOTE_PATH=%s\\nAI_CLI_REMOTE_BIN=%s\\n' \"$PATH\" \"$_ai_cli_bin\""
     )
     proc = subprocess.run(

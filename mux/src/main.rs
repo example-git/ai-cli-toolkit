@@ -76,7 +76,19 @@ fn run() -> Result<i32, String> {
         .status()
         .map_err(|e| format!("tmux new-session failed: {e}"))?;
     if !status.success() {
-        return Err("tmux new-session failed".into());
+        // Stale socket may be blocking — kill dead server and retry once
+        let _ = Command::new("tmux")
+            .args(["-L", &socket_name, "kill-server"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        let status2 = Command::new("tmux")
+            .args(&args)
+            .status()
+            .map_err(|e| format!("tmux new-session failed after cleanup: {e}"))?;
+        if !status2.success() {
+            return Err("tmux new-session failed".into());
+        }
     }
 
     // Set session-level env vars from the primary tab so they propagate

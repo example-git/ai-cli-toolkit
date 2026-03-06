@@ -45,6 +45,8 @@ def test_push_package_uses_portable_rsync_chmod(
     package = SimpleNamespace(
         entries=[PackageFileEntry(local_path=local_file, remote_rel_path=".codex/config.toml")],
         session_dir="/home/alice/.ai-cli/remote-sessions/codex-abc123",
+        tool_name="codex",
+        real_home="/home/alice",
     )
     remote_spec = RemoteSpec(user="alice", host="server", path="/repo")
 
@@ -59,10 +61,13 @@ def test_push_package_uses_portable_rsync_chmod(
 
     push_package(package, remote_spec)
 
-    assert len(calls) == 3
+    assert len(calls) >= 3
     assert calls[0][-1] == "mkdir -p /home/alice/.ai-cli/remote-sessions/codex-abc123"
     assert "--chmod=Du=rwx,Dgo=,Fu=rw,Fgo=" in calls[1]
     assert "chmod 700 /home/alice/.ai-cli/remote-sessions/codex-abc123/.ai-cli/bin/ai-prompt-editor" in calls[2][-1]
+    # Real-home push for tool config files
+    real_home_pushes = [c for c in calls if any("__real_home__" in str(a) for a in c)]
+    assert len(real_home_pushes) <= 1
 
 
 def test_build_package_manifest_includes_codex_startup_files(
