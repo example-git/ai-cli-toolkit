@@ -39,4 +39,3 @@ jobs:
 
       - name: Publish distribution 📦 to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-        # No password or token needed if Trusted Publishing is configured on PyPI!
