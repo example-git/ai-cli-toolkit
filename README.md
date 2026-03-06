@@ -17,22 +17,11 @@ It runs each tool through a managed mitmproxy layer to inject instructions consi
 
 ---
 
-This is an early `0.1.0` release. Features are still evolving, behavior may change, and some workflows may be incomplete or unstable.
+This is an early `0.2.0` release. Features are still evolving, behavior may change, and some workflows may be incomplete or unstable.
 
 Use this project at your own risk. You are responsible for how you use it, including compliance with platform policies, terms of service, and applicable laws. The maintainers are not liable for misuse, data loss, account issues, service interruptions, or other consequences resulting from use of this tool.
 
 ---
-
-## Current Status
-
-Implemented and smoke-tested:
-
-- Multi-tool dispatch and alias-style argv routing
-- Per-tool instruction injection addons
-- Dynamic per-session proxy ports
-- Session extraction across multiple agents
-- Startup recent-context injection (cwd-scoped, cross-agent)
-- Interactive menu, update command, completions, installer, statusline
 
 ## Key Features
 

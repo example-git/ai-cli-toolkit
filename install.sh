@@ -11,6 +11,10 @@ PKG_MUX_DIR="${SCRIPT_DIR}/ai_cli/bin"
 
 TOOLS=(claude codex copilot gemini)
 
+# UI state
+DEBUG=false
+SPIN_PID=0
+
 usage() {
   cat <<'EOF'
 Usage: install.sh [options]
@@ -26,9 +30,60 @@ Options:
   --auto-install-deps  Allow installer to install required system deps (tmux)
   --yes, -y            Assume yes for interactive confirmations
   --non-interactive    Never prompt; use provided flags only
+  --debug              Show verbose output from background commands
   --help, -h           Show this help
 EOF
 }
+
+# --- Visual UI Helpers ---
+
+# Spinner function to run in background
+spinner() {
+  local msg="$1"
+  local delay=0.3
+  local frames=("..." ".." "." ".." "...")
+  while true; do
+    for frame in "${frames[@]}"; do
+      printf "\r  [ %s ] %s    " "$frame" "$msg"
+      sleep "$delay"
+    done
+  done
+}
+
+# Start a named stage with a spinner
+start_stage() {
+  if $DEBUG; then
+    echo "--- Stage: $1 ---"
+  else
+    spinner "$1" &
+    SPIN_PID=$!
+  fi
+}
+
+# Stop the spinner and mark stage as done
+stop_stage() {
+  local msg="${1:-Done}"
+  if ! $DEBUG && [ "$SPIN_PID" -ne 0 ]; then
+    kill "$SPIN_PID" >/dev/null 2>&1 || true
+    wait "$SPIN_PID" 2>/dev/null || true
+    SPIN_PID=0
+    # \r = return to start, \033[K = clear to end of line
+    printf "\r\033[K  [ OK ] %s\n" "$msg"
+  elif $DEBUG; then
+    echo "  [ OK ] $msg"
+  fi
+}
+
+# Run a command with hidden output unless DEBUG is true
+run_quiet() {
+  if $DEBUG; then
+    "$@"
+  else
+    "$@" >/dev/null 2>&1
+  fi
+}
+
+# --- Core Functions ---
 
 ensure_rc_line() {
   local rc_file="$1"
@@ -37,7 +92,7 @@ ensure_rc_line() {
   [ -f "$rc_file" ] || return 0
   if ! grep -qF "$marker" "$rc_file"; then
     printf '\n# %s\n%s\n' "$marker" "$line" >> "$rc_file"
-    echo "Updated $rc_file ($marker)"
+    if $DEBUG; then echo "Updated $rc_file ($marker)"; fi
   fi
 }
 
@@ -46,7 +101,7 @@ set_config_value() {
   local binary="$2"
   local alias_state="$3"
 
-  python3 - "$tool" "$binary" "$alias_state" <<'PY'
+  run_quiet python3 - "$tool" "$binary" "$alias_state" <<'PY'
 import sys
 from ai_cli.config import ensure_config, save_config
 
@@ -72,12 +127,10 @@ copy_completions() {
     zsh_comp_dir="${ZSH_CUSTOM:-${omz_dir}/custom}/completions"
     mkdir -p "$zsh_comp_dir"
     cp "$comp_src/_ai-cli" "$zsh_comp_dir/_ai-cli"
-    echo "Installed zsh completion: $zsh_comp_dir/_ai-cli"
   else
     zsh_comp_dir="${HOME}/.zsh/completions"
     mkdir -p "$zsh_comp_dir"
     cp "$comp_src/_ai-cli" "$zsh_comp_dir/_ai-cli"
-    echo "Installed zsh completion: $zsh_comp_dir/_ai-cli"
     ensure_rc_line "${HOME}/.zshrc" "ai-cli: zsh completion path" "fpath=(\"${zsh_comp_dir}\" \$fpath)"
     ensure_rc_line "${HOME}/.zshrc" "ai-cli: compinit" "autoload -Uz compinit && compinit"
   fi
@@ -86,7 +139,6 @@ copy_completions() {
   local bash_comp_dir="${HOME}/.local/share/bash-completion/completions"
   mkdir -p "$bash_comp_dir"
   cp "$comp_src/ai-cli.bash" "$bash_comp_dir/ai-cli"
-  echo "Installed bash completion: $bash_comp_dir/ai-cli"
   ensure_rc_line "${HOME}/.bashrc" "ai-cli: bash completion" "[ -f \"${bash_comp_dir}/ai-cli\" ] && source \"${bash_comp_dir}/ai-cli\""
 }
 
@@ -94,14 +146,12 @@ install_statusline() {
   mkdir -p "$CLAUDE_DIR"
   cp "${SCRIPT_DIR}/statusline/statusline-command.sh" "$STATUSLINE_DEST"
   chmod +x "$STATUSLINE_DEST"
-  echo "Installed statusline: $STATUSLINE_DEST"
 
   local settings="${CLAUDE_DIR}/settings.json"
   local status_json='{"type":"command","command":"~/.claude/statusline-command.sh"}'
 
   if [ ! -f "$settings" ]; then
     printf '{\n  "statusLine": %s\n}\n' "$status_json" > "$settings"
-    echo "Created $settings"
     return
   fi
 
@@ -110,10 +160,6 @@ install_statusline() {
     tmp="$(mktemp)"
     jq --argjson sl "$status_json" '. + {statusLine: $sl} | del(.statusCommand)' "$settings" > "$tmp"
     mv "$tmp" "$settings"
-    echo "Updated $settings"
-  else
-    echo "jq not found; update this manually in $settings:"
-    echo '  "statusLine": {"type":"command","command":"~/.claude/statusline-command.sh"}'
   fi
 }
 
@@ -130,79 +176,60 @@ install_tool_list=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --reinstall|-f)
-      reinstall=true
-      ;;
-    --alias-all)
-      alias_all=true
-      ;;
+    --reinstall|-f) reinstall=true ;;
+    --alias-all) alias_all=true ;;
     --alias)
       shift
-      if [[ $# -eq 0 ]]; then
-        echo "--alias requires a tool name" >&2
-        exit 1
-      fi
+      if [[ $# -eq 0 ]]; then echo "--alias requires a tool name" >&2; exit 1; fi
       alias_tools+=("$1")
       ;;
-    --no-alias)
-      no_alias=true
-      ;;
-    --install-tools)
-      install_tools=true
-      ;;
+    --no-alias) no_alias=true ;;
+    --install-tools) install_tools=true ;;
     --install-tool)
       shift
-      if [[ $# -eq 0 ]]; then
-        echo "--install-tool requires a tool name" >&2
-        exit 1
-      fi
+      if [[ $# -eq 0 ]]; then echo "--install-tool requires a tool name" >&2; exit 1; fi
       install_tool_list+=("$1")
       ;;
     --method)
       shift
-      if [[ $# -eq 0 ]]; then
-        echo "--method requires a method name (npm, brew, macports, curl)" >&2
-        exit 1
-      fi
+      if [[ $# -eq 0 ]]; then echo "--method requires a method (npm, brew, macports, curl)" >&2; exit 1; fi
       install_method="$1"
       ;;
-    --auto-install-deps)
-      auto_install_deps=true
-      ;;
-    --yes|-y)
-      yes_all=true
-      ;;
-    --non-interactive)
-      non_interactive=true
-      ;;
-    --help|-h)
-      usage
-      exit 0
-      ;;
-    *)
-      echo "Unknown option: $1" >&2
-      usage
-      exit 1
-      ;;
+    --auto-install-deps) auto_install_deps=true ;;
+    --yes|-y) yes_all=true ;;
+    --non-interactive) non_interactive=true ;;
+    --debug) DEBUG=true ;;
+    --help|-h) usage; exit 0 ;;
+    *) echo "Unknown option: $1" >&2; usage; exit 1 ;;
   esac
   shift
 done
 
+echo "=== AI Cli Toolkit Installer ==="
+echo
+
 if ! command -v python3 >/dev/null 2>&1; then
-  echo "python3 is required" >&2
+  echo "Error: python3 is required" >&2
   exit 1
 fi
 
-# Ensure tmux is installed (required for ai-mux)
-if ! command -v tmux >/dev/null 2>&1; then
-  echo "tmux not found."
+# --- Dependency Check (System) ---
+REQUIRED_DEPS=(tmux rsync curl git)
+MISSING_DEPS=()
+for dep in "${REQUIRED_DEPS[@]}"; do
+  if ! command -v "$dep" >/dev/null 2>&1; then
+    MISSING_DEPS+=("$dep")
+  fi
+done
+
+if [ "${#MISSING_DEPS[@]}" -gt 0 ]; then
   if ! $auto_install_deps; then
     if $non_interactive; then
-      echo "tmux is required. Re-run with --auto-install-deps to allow automatic installation." >&2
+      echo "Error: Missing system dependencies: ${MISSING_DEPS[*]}. Re-run with --auto-install-deps." >&2
       exit 1
     fi
     if ! $yes_all && [ -t 0 ]; then
-      read -r -p "Install tmux automatically now? [y/N] " deps_answer
+      read -r -p "Install missing system dependencies (${MISSING_DEPS[*]}) automatically? [y/N] " deps_answer
       case "${deps_answer,,}" in
         y|yes) auto_install_deps=true ;;
       esac
@@ -212,32 +239,31 @@ if ! command -v tmux >/dev/null 2>&1; then
   fi
 
   if ! $auto_install_deps; then
-    echo "Please install tmux manually, then re-run install.sh." >&2
+    echo "Please install ${MISSING_DEPS[*]} manually, then re-run install.sh." >&2
     exit 1
   fi
 
-  echo "Installing tmux..."
-  if command -v brew >/dev/null 2>&1; then
-    brew install tmux
-  elif command -v apt-get >/dev/null 2>&1; then
-    sudo apt-get install -y tmux
-  elif command -v dnf >/dev/null 2>&1; then
-    sudo dnf install -y tmux
-  elif command -v pacman >/dev/null 2>&1; then
-    sudo pacman -S --noconfirm tmux
+  start_stage "Installing system dependencies"
+  if command -v brew >/dev/null 2>&1; then run_quiet brew install "${MISSING_DEPS[@]}"
+  elif command -v apt-get >/dev/null 2>&1; then 
+    run_quiet sudo apt-get update
+    run_quiet sudo apt-get install -y "${MISSING_DEPS[@]}"
+  elif command -v dnf >/dev/null 2>&1; then run_quiet sudo dnf install -y "${MISSING_DEPS[@]}"
+  elif command -v pacman >/dev/null 2>&1; then run_quiet sudo pacman -S --noconfirm "${MISSING_DEPS[@]}"
   else
-    echo "Could not auto-install tmux. Please install it manually." >&2
+    stop_stage "Failed to auto-install dependencies. Unknown package manager."
     exit 1
   fi
+  stop_stage "System dependencies installed"
 fi
 
 mkdir -p "$BIN_DIR"
 
+# --- Python Package ---
+start_stage "Installing Python package"
 install_python_package() {
   local pip_flags=(-q)
-  if $reinstall; then
-    pip_flags+=(--upgrade --force-reinstall)
-  fi
+  if $reinstall; then pip_flags+=(--upgrade --force-reinstall); fi
 
   local -a pip_user_cmd=(/usr/bin/env python3 -m pip install "${pip_flags[@]}" --user -e "$SCRIPT_DIR")
   local -a pip_venv_cmd=(/usr/bin/env python3 -m pip install "${pip_flags[@]}" -e "$SCRIPT_DIR")
@@ -248,36 +274,42 @@ install_python_package() {
   output="$("${pip_user_cmd[@]}" 2>&1)"
   local status=$?
   set -e
-  if [ $status -eq 0 ]; then
-    return 0
-  fi
+  if [ $status -eq 0 ]; then return 0; fi
 
   if printf '%s' "$output" | grep -qF "$user_install_error"; then
-    echo "Detected virtualenv user-site restriction; retrying pip install without --user."
-    "${pip_venv_cmd[@]}"
+    run_quiet "${pip_venv_cmd[@]}"
     return 0
   fi
-
-  printf '%s\n' "$output" >&2
   return "$status"
 }
+if install_python_package; then
+  stop_stage "Python package installed"
+else
+  stop_stage "Python package installation failed"
+  exit 1
+fi
 
-install_python_package
-
+# --- ai-mux ---
 if [ -d "$MUX_DIR" ] && command -v cargo >/dev/null 2>&1; then
-  echo "Building ai-mux (tmux orchestrator)..."
-  (cd "$MUX_DIR" && cargo build --release)
-  if [ -x "$MUX_DIR/target/release/ai-mux" ]; then
-    mkdir -p "$PKG_MUX_DIR"
-    cp "$MUX_DIR/target/release/ai-mux" "$PKG_MUX_DIR/ai-mux"
-    chmod +x "$PKG_MUX_DIR/ai-mux"
-    cp "$MUX_DIR/target/release/ai-mux" "$BIN_DIR/ai-mux"
-    chmod +x "$BIN_DIR/ai-mux"
-    echo "Installed ai-mux: $BIN_DIR/ai-mux"
+  start_stage "Building ai-mux (tmux orchestrator)"
+  if run_quiet bash -c "cd \"$MUX_DIR\" && cargo build --release"; then
+    if [ -x "$MUX_DIR/target/release/ai-mux" ]; then
+      mkdir -p "$PKG_MUX_DIR"
+      cp "$MUX_DIR/target/release/ai-mux" "$PKG_MUX_DIR/ai-mux"
+      chmod +x "$PKG_MUX_DIR/ai-mux"
+      cp "$MUX_DIR/target/release/ai-mux" "$BIN_DIR/ai-mux"
+      chmod +x "$BIN_DIR/ai-mux"
+      stop_stage "ai-mux built and installed"
+    else
+      stop_stage "ai-mux binary not found"
+    fi
+  else
+    stop_stage "ai-mux build failed"
   fi
 fi
 
-# Ensure ai-cli executable is present.
+# --- Executable & PATH ---
+start_stage "Configuring environment"
 AI_CLI_BIN="${BIN_DIR}/ai-cli"
 if [ ! -x "$AI_CLI_BIN" ]; then
   AI_CLI_BIN="$(command -v ai-cli || true)"
@@ -293,131 +325,93 @@ fi
 
 ensure_rc_line "${HOME}/.zshrc" "ai-cli: user bin" "export PATH=\"${BIN_DIR}:\$PATH\""
 ensure_rc_line "${HOME}/.bashrc" "ai-cli: user bin" "export PATH=\"${BIN_DIR}:\$PATH\""
-
-copy_completions
 install_statusline
+stop_stage "Environment configured"
 
+# --- Aliases ---
 mkdir -p "$ALIAS_DIR"
 alias_targets=()
 
 if ! $no_alias; then
-  if $alias_all; then
-    alias_targets=("${TOOLS[@]}")
-  elif [ "${#alias_tools[@]}" -gt 0 ]; then
-    alias_targets=("${alias_tools[@]}")
-  elif $yes_all; then
-    alias_targets=("${TOOLS[@]}")
+  if $alias_all; then alias_targets=("${TOOLS[@]}")
+  elif [ "${#alias_tools[@]}" -gt 0 ]; then alias_targets=("${alias_tools[@]}")
+  elif $yes_all; then alias_targets=("${TOOLS[@]}")
   elif ! $non_interactive && [ -t 0 ]; then
+    printf "\n"
     read -r -p "Install command aliases for all tools? [y/N] " answer
-    case "${answer,,}" in
-      y|yes)
-        alias_targets=("${TOOLS[@]}")
-        ;;
-    esac
+    case "${answer,,}" in y|yes) alias_targets=("${TOOLS[@]}") ;; esac
   fi
 fi
 
 if [ "${#alias_targets[@]}" -gt 0 ]; then
+  start_stage "Installing aliases"
   ensure_rc_line "${HOME}/.zshrc" "ai-cli: alias path" "export PATH=\"${ALIAS_DIR}:\$PATH\""
   ensure_rc_line "${HOME}/.bashrc" "ai-cli: alias path" "export PATH=\"${ALIAS_DIR}:\$PATH\""
-fi
+  
+  for tool in "${TOOLS[@]}"; do
+    enabled_alias=false
+    for selected in "${alias_targets[@]}"; do
+      if [ "$selected" = "$tool" ]; then enabled_alias=true; break; fi
+    done
 
-for tool in "${TOOLS[@]}"; do
-  enabled_alias=false
-  for selected in "${alias_targets[@]}"; do
-    if [ "$selected" = "$tool" ]; then
-      enabled_alias=true
-      break
+    if $enabled_alias; then
+      current_bin="$(command -v "$tool" || true)"
+      if [ -n "$current_bin" ] && [ "$current_bin" != "${ALIAS_DIR}/${tool}" ]; then
+        set_config_value "$tool" "$current_bin" "true"
+      else
+        set_config_value "$tool" "__KEEP__" "true"
+      fi
+      ln -sf "$AI_CLI_BIN" "${ALIAS_DIR}/${tool}"
+      chmod +x "${ALIAS_DIR}/${tool}"
+    else
+      set_config_value "$tool" "__KEEP__" "false"
     fi
   done
+  stop_stage "Aliases installed"
+fi
 
-  if $enabled_alias; then
-    current_bin="$(command -v "$tool" || true)"
-    if [ -n "$current_bin" ] && [ "$current_bin" != "${ALIAS_DIR}/${tool}" ]; then
-      set_config_value "$tool" "$current_bin" "true"
-    else
-      set_config_value "$tool" "__KEEP__" "true"
-    fi
-    ln -sf "$AI_CLI_BIN" "${ALIAS_DIR}/${tool}"
-    chmod +x "${ALIAS_DIR}/${tool}"
-    echo "Alias installed: ${ALIAS_DIR}/${tool} -> ${AI_CLI_BIN}"
-  else
-    set_config_value "$tool" "__KEEP__" "false"
-  fi
-done
-
-# ---------------------------------------------------------------------------
-# Install underlying CLI tools (optional)
-# ---------------------------------------------------------------------------
-
-# Detect which package managers are available
+# --- CLI Tools ---
 has_npm=false; command -v npm >/dev/null 2>&1 && has_npm=true
 has_brew=false; command -v brew >/dev/null 2>&1 && has_brew=true
 has_port=false; command -v port >/dev/null 2>&1 && has_port=true
 has_curl=false; command -v curl >/dev/null 2>&1 && has_curl=true
 
-# Per-tool method info: tool -> "method1:label1|method2:label2|..."
-# First listed = recommended; native installers preferred
 declare -A TOOL_METHODS
 TOOL_METHODS=(
-  [claude]="native:Native installer (recommended, auto-updates)|brew:Homebrew (brew install --cask)|npm:npm"
-  [codex]="npm:npm (recommended)|brew:Homebrew (brew install --cask)"
-  [copilot]="npm:npm (recommended)|brew:Homebrew"
-  [gemini]="npm:npm (recommended)|brew:Homebrew|macports:MacPorts"
+  [claude]="native:Native installer|brew:Homebrew|npm:npm"
+  [codex]="npm:npm|brew:Homebrew"
+  [copilot]="npm:npm|brew:Homebrew"
+  [gemini]="npm:npm|brew:Homebrew|macports:MacPorts"
 )
 
-# Check if a method's prerequisite is available
 method_available() {
-  case "$1" in
-    native) $has_curl ;;
-    npm|npx) $has_npm ;;
-    brew) $has_brew ;;
-    macports) $has_port ;;
-    *) return 0 ;;
-  esac
+  case "$1" in native) $has_curl ;; npm|npx) $has_npm ;; brew) $has_brew ;; macports) $has_port ;; *) return 0 ;; esac
 }
 
-# Pick the best available method for a tool (first available in preference order)
 auto_detect_method() {
   local tool="$1"
   local methods="${TOOL_METHODS[$tool]:-}"
   IFS='|' read -ra entries <<< "$methods"
   for entry in "${entries[@]}"; do
     local method="${entry%%:*}"
-    if method_available "$method"; then
-      echo "$method"
-      return
-    fi
+    if method_available "$method"; then echo "$method"; return; fi
   done
   echo ""
 }
 
-# Show method choices and prompt user for a tool
 prompt_method_for_tool() {
   local tool="$1"
   local methods="${TOOL_METHODS[$tool]:-}"
   local default_method
   default_method="$(auto_detect_method "$tool")"
-
-  if [ -z "$methods" ]; then
-    echo "$default_method"
-    return
-  fi
-
+  if [ -z "$methods" ]; then echo "$default_method"; return; fi
   IFS='|' read -ra entries <<< "$methods"
   local available_entries=()
   for entry in "${entries[@]}"; do
     local method="${entry%%:*}"
-    if method_available "$method"; then
-      available_entries+=("$entry")
-    fi
+    if method_available "$method"; then available_entries+=("$entry"); fi
   done
-
-  # Only one option — use it
-  if [ "${#available_entries[@]}" -le 1 ]; then
-    echo "$default_method"
-    return
-  fi
+  if [ "${#available_entries[@]}" -le 1 ]; then echo "$default_method"; return; fi
 
   echo "  Install methods for $tool:" >&2
   local i=1
@@ -429,7 +423,6 @@ prompt_method_for_tool() {
     echo "    $i) $label${marker}" >&2
     i=$((i + 1))
   done
-
   read -r -p "  Choose method [1]: " choice
   choice="${choice:-1}"
   if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#available_entries[@]}" ]; then
@@ -443,138 +436,62 @@ prompt_method_for_tool() {
 install_one_tool() {
   local tool="$1"
   local method="$2"
+  start_stage "Installing $tool ($method)"
   if [ -n "$method" ]; then
-    python3 -m ai_cli.update "$tool" --method "$method" || true
+    run_quiet python3 -m ai_cli.update "$tool" --method "$method"
   else
-    python3 -m ai_cli.update "$tool" || true
+    run_quiet python3 -m ai_cli.update "$tool"
   fi
+  stop_stage "Installed $tool"
 }
 
-install_cli_tools() {
-  if $install_tools; then
-    # --install-tools: install all, auto-detect or use --method
-    echo
-    echo "Installing all CLI tools..."
-    for tool in "${TOOLS[@]}"; do
-      local method="$install_method"
-      if [ -z "$method" ]; then
-        method="$(auto_detect_method "$tool")"
-      fi
-      echo
-      install_one_tool "$tool" "$method"
-    done
-  elif [ "${#install_tool_list[@]}" -gt 0 ]; then
-    # --install-tool TOOL: specific tools
-    for tool in "${install_tool_list[@]}"; do
-      local method="$install_method"
-      if [ -z "$method" ] && ! $non_interactive && [ -t 0 ]; then
-        method="$(prompt_method_for_tool "$tool")"
-      elif [ -z "$method" ]; then
-        method="$(auto_detect_method "$tool")"
-      fi
-      echo
-      install_one_tool "$tool" "$method"
-    done
-  elif $yes_all; then
-    for tool in "${TOOLS[@]}"; do
-      local method="$install_method"
-      if [ -z "$method" ]; then
-        method="$(auto_detect_method "$tool")"
-      fi
-      echo
-      install_one_tool "$tool" "$method"
-    done
-  elif ! $non_interactive && [ -t 0 ]; then
-    # Interactive: ask per tool
-    echo
-    echo "=== CLI Tool Installation ==="
-    echo "Available tools: ${TOOLS[*]}"
-    echo
+if $install_tools; then
+  for tool in "${TOOLS[@]}"; do
+    install_one_tool "$tool" "${install_method:-$(auto_detect_method "$tool")}"
+  done
+elif [ "${#install_tool_list[@]}" -gt 0 ]; then
+  for tool in "${install_tool_list[@]}"; do
+    install_one_tool "$tool" "${install_method:-$(auto_detect_method "$tool")}"
+  done
+elif $yes_all; then
+  for tool in "${TOOLS[@]}"; do
+    install_one_tool "$tool" "${install_method:-$(auto_detect_method "$tool")}"
+  done
+elif ! $non_interactive && [ -t 0 ]; then
+  ANY_TOOL_MISSING=false
+  for tool in "${TOOLS[@]}"; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+      ANY_TOOL_MISSING=true
+      break
+    fi
+  done
+
+  if $ANY_TOOL_MISSING; then
+    printf "\n=== CLI Tool Installation ===\n"
     read -r -p "Install underlying CLI tools? [y/N] " answer
     case "${answer,,}" in
       y|yes)
         for tool in "${TOOLS[@]}"; do
-          echo
-          # Check if already installed
           if command -v "$tool" >/dev/null 2>&1; then
-            local ver
-            ver="$("$tool" --version 2>/dev/null || echo "unknown")"
-            read -r -p "$tool is already installed ($ver). Reinstall/update? [y/N] " up_answer
-            case "${up_answer,,}" in
-              y|yes) ;;
-              *) continue ;;
-            esac
+            read -r -p "$tool is already installed. Reinstall? [y/N] " up_answer
+            case "${up_answer,,}" in y|yes) ;; *) continue ;; esac
           fi
-
-          local method
-          if [ -n "$install_method" ]; then
-            method="$install_method"
-          else
-            method="$(prompt_method_for_tool "$tool")"
-          fi
-
-          if [ -n "$method" ]; then
-            install_one_tool "$tool" "$method"
-          else
-            echo "  No available install method for $tool (missing npm/brew/etc). Skipping."
-          fi
+          method="${install_method:-$(prompt_method_for_tool "$tool")}"
+          [ -n "$method" ] && install_one_tool "$tool" "$method"
         done
         ;;
     esac
   fi
-}
+fi
 
-install_cli_tools
-
-# ---------------------------------------------------------------------------
-# Regenerate completions (picks up flags from any newly installed tools)
-# ---------------------------------------------------------------------------
-
-echo
-echo "Regenerating shell completions..."
-python3 -m ai_cli.completion_gen generate --shell all 2>/dev/null || true
-
-# Reinstall the freshly generated completions
+# --- Final Steps ---
+start_stage "Regenerating completions"
+run_quiet bash -c "python3 -m ai_cli.completion_gen generate --shell all"
 copy_completions
-
-# ---------------------------------------------------------------------------
-# Source the user's rc file to load new completions into current shell
-# ---------------------------------------------------------------------------
-
-source_rc_file() {
-  local shell_name
-  shell_name="$(basename "${SHELL:-}")"
-  case "$shell_name" in
-    zsh)
-      if [ -f "${HOME}/.zshrc" ]; then
-        echo "Sourcing ~/.zshrc to load completions..."
-        # Can't source zsh rc from bash; print instructions instead
-        echo "  Run: source ~/.zshrc"
-        echo "  (or open a new terminal)"
-      fi
-      ;;
-    bash)
-      if [ -f "${HOME}/.bashrc" ]; then
-        echo "Sourcing ~/.bashrc to load completions..."
-        # shellcheck disable=SC1091
-        source "${HOME}/.bashrc" 2>/dev/null || true
-      fi
-      ;;
-    *)
-      echo "Open a new shell to pick up completions."
-      ;;
-  esac
-}
-
-source_rc_file
+stop_stage "Completions updated"
 
 echo
 echo "Install complete."
 echo "- ai-cli bin: $AI_CLI_BIN"
 echo
-echo "To install/update individual tools later:"
-echo "  ai-cli update --list-methods     # show available install methods"
-echo "  ai-cli update gemini             # auto-detect best method"
-echo "  ai-cli update gemini -m brew     # install with Homebrew"
-echo "  ai-cli update claude -m native   # native installer (auto-updates)"
-echo "  ai-cli update --all              # install/update all tools"
+echo "To finish, run: source ~/.zshrc (or ~/.bashrc)"

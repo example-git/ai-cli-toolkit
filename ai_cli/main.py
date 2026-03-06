@@ -180,6 +180,13 @@ def _ai_mux_status() -> tuple[str, str | None]:
     return _mh_ai_mux_status()
 
 
+def _default_remote_session_name(tool_name: str, remote_spec: "RemoteSpec") -> str:
+    digest = hashlib.sha256(
+        f"{tool_name}:{remote_spec.display}".encode("utf-8")
+    ).hexdigest()[:12]
+    return f"ai-cli-{tool_name}-{digest}"
+
+
 def _resolve_tool_prompt_file(config: dict[str, Any], tool_name: str) -> str:
     tools_cfg = config.get("tools", {})
     raw_tool_cfg = tools_cfg.get(tool_name, {}) if isinstance(tools_cfg, dict) else {}
@@ -850,7 +857,7 @@ def run_tool(tool_name: str, args: list[str]) -> int:
         # ── No-package mode (raw $HOME, no isolation) ────────────────────
         remote_session_name = (
             wrapper_overrides.get("remote_session_name")
-            or f"ai-cli-{tool_name}"
+            or _default_remote_session_name(tool_name, remote_spec)
         )
         append_log(
             log_path,
