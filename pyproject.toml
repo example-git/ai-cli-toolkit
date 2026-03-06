@@ -6,11 +6,11 @@ build-backend = "setuptools.build_meta"
 name = "ai-cli"
 version = "0.2.0"
 description = "Unified AI CLI wrapper for Claude, Codex, Copilot, and Gemini"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 dependencies = [
-    "mitmproxy>=10,<12",
-    "shtab>=1.7,<2",
-    "bcrypt<4.1",
+    "mitmproxy>=12.1.2",
+    "shtab>=1.7",
+    "bcrypt>=4.1",
 ]
 
 [project.optional-dependencies]

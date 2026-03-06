@@ -1,4 +1,4 @@
 -e .[dev]
-mitmproxy
-shtab
-bcrypt<4.1
+mitmproxy>=12.1.2
+shtab>=1.7
+bcrypt>=4.1
