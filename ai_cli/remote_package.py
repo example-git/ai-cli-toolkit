@@ -322,6 +322,16 @@ def _render_shell_common(
         # ai-cli remote shell helpers
         [ "${{AI_CLI_REMOTE_SHELL_COMMON_LOADED:-0}}" = 1 ] && return 0 2>/dev/null
         export AI_CLI_REMOTE_SHELL_COMMON_LOADED=1
+
+        # Ensure real-home tool paths are available (nvm, .local/bin, cargo, etc.)
+        _rh="${{REAL_HOME:-$HOME}}"
+        [ -s "${{NVM_DIR:-$_rh/.nvm}}/nvm.sh" ] && . "${{NVM_DIR:-$_rh/.nvm}}/nvm.sh" 2>/dev/null
+        [ -s "$_rh/.config/fnm/fnm_multishells" ] && eval "$(fnm env 2>/dev/null)" 2>/dev/null
+        [ -d "$_rh/.volta" ] && export VOLTA_HOME="$_rh/.volta" && export PATH="$VOLTA_HOME/bin:$PATH"
+        case ":$PATH:" in *":$_rh/.local/bin:"*) ;; *) export PATH="$_rh/.local/bin:$PATH" ;; esac
+        case ":$PATH:" in *":$_rh/.cargo/bin:"*) ;; *) export PATH="$_rh/.cargo/bin:$PATH" ;; esac
+        unset _rh
+
         export AI_CLI_REMOTE_TOOL={tool_q}
         export AI_CLI_REMOTE_PROJECT_ROOT={root_q}
         export AI_CLI_REMOTE_SESSION_NAME={session_q}
