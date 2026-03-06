@@ -16,7 +16,7 @@ jobs:
     # Specifying an environment is required for PyPI Trusted Publishing
     environment:
       name: pypi
-      url: https://pypi.org/p/ai-cli # Replace with your actual PyPI package name
+      url: https://pypi.org/p/ai-cli-toolkit # Replace with your actual PyPI package name
       
     permissions:
       id-token: write  # IMPORTANT: mandatory for PyPI trusted publishing
