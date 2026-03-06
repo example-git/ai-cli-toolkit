@@ -7,9 +7,7 @@ from ai_cli import main
 from ai_cli import remote as remote_mod
 
 
-def test_run_tool_remote_detached_session_defers_sync_up(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_run_tool_remote_detached_session_defers_sync_up(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     # Force rsync mode (session mode is now the default for remote specs)
     monkeypatch.setenv("AI_CLI_REMOTE_RSYNC", "1")
@@ -64,9 +62,7 @@ def test_run_tool_remote_detached_session_defers_sync_up(
     assert sync_up_calls == []
 
 
-def test_run_tool_remote_uses_remote_path_for_startup_context(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_run_tool_remote_uses_remote_path_for_startup_context(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("AI_CLI_REMOTE_RSYNC", "1")
 

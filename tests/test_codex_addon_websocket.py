@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-import mitmproxy.ctx as _mitmproxy_ctx  # type: ignore[import-untyped]
+import mitmproxy.ctx as _mitmproxy_ctx
+
 from ai_cli.addons import codex_addon
 
 
@@ -93,9 +94,7 @@ def test_websocket_skips_non_target_path(monkeypatch) -> None:
     _set_options(monkeypatch)
     injector = codex_addon.DeveloperInstructionInjector()
 
-    payload = {
-        "input": [{"role": "user", "content": [{"type": "input_text", "text": "hello"}]}]
-    }
+    payload = {"input": [{"role": "user", "content": [{"type": "input_text", "text": "hello"}]}]}
     original = json.dumps(payload).encode("utf-8")
     msg = _DummyWSMessage(original, from_client=True)
     flow = _DummyFlow("/backend-api/other", msg)
@@ -232,7 +231,9 @@ def test_websocket_prefers_inline_system_instructions_over_file(tmp_path, monkey
     assert "FILE RULES" not in text
 
 
-def test_websocket_prefers_system_prompt_file_without_explicit_override(tmp_path, monkeypatch) -> None:
+def test_websocket_prefers_system_prompt_file_without_explicit_override(
+    tmp_path, monkeypatch
+) -> None:
     system_file = tmp_path / "system.txt"
     system_file.write_text("FILE RULES", encoding="utf-8")
 

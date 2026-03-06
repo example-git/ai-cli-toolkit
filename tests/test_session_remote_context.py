@@ -17,7 +17,9 @@ def test_build_recent_context_for_remote_host_uses_pulled_remote_artifacts(
     monkeypatch.setattr(
         session,
         "query_traffic_turns",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("traffic lookup should be skipped")),
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("traffic lookup should be skipped")
+        ),
     )
 
     remote_root = (

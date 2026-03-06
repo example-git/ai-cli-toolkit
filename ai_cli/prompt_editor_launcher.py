@@ -149,7 +149,11 @@ def _write_lock(path: Path, payload: dict[str, object]) -> None:
 
 def _replace_stale_lock(path: Path, payload: dict[str, object]) -> bool:
     current = _read_lock(path)
-    current_pid = int(current.get("pid", 0)) if isinstance(current, dict) else 0
+    current_pid_raw = current.get("pid") if isinstance(current, dict) else None
+    if isinstance(current_pid_raw, (int, str)):
+        current_pid = int(current_pid_raw)
+    else:
+        current_pid = 0
     if current and _pid_alive(current_pid):
         return False
     try:

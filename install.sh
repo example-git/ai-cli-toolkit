@@ -245,7 +245,7 @@ if [ "${#MISSING_DEPS[@]}" -gt 0 ]; then
 
   start_stage "Installing system dependencies"
   if command -v brew >/dev/null 2>&1; then run_quiet brew install "${MISSING_DEPS[@]}"
-  elif command -v apt-get >/dev/null 2>&1; then 
+  elif command -v apt-get >/dev/null 2>&1; then
     run_quiet sudo apt-get update
     run_quiet sudo apt-get install -y "${MISSING_DEPS[@]}"
   elif command -v dnf >/dev/null 2>&1; then run_quiet sudo dnf install -y "${MISSING_DEPS[@]}"
@@ -351,7 +351,7 @@ if [ "${#alias_targets[@]}" -gt 0 ]; then
   start_stage "Installing aliases"
   ensure_rc_line "${HOME}/.zshrc" "ai-cli: alias path" "export PATH=\"${ALIAS_DIR}:\$PATH\""
   ensure_rc_line "${HOME}/.bashrc" "ai-cli: alias path" "export PATH=\"${ALIAS_DIR}:\$PATH\""
-  
+
   for tool in "${TOOLS[@]}"; do
     enabled_alias=false
     for selected in "${alias_targets[@]}"; do

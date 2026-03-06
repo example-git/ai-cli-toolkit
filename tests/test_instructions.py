@@ -89,9 +89,7 @@ def test_ensure_project_instructions_file_uses_central_project_prompts_dir(
     legacy_file = legacy_dir / "project_instructions.txt"
     legacy_file.write_text("legacy\n", encoding="utf-8")
 
-    resolved = Path(
-        instructions.ensure_project_instructions_file(project_cwd=str(project_dir))
-    )
+    resolved = Path(instructions.ensure_project_instructions_file(project_cwd=str(project_dir)))
 
     assert resolved.parent.parent == tmp_path / ".ai-cli" / "project-prompts"
     assert resolved.read_text(encoding="utf-8") == "legacy\n"
