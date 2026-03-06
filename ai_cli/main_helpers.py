@@ -15,6 +15,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from ai_cli.log import append_log
+from ai_cli.remote import RemoteSpec
 
 CODEX_PROXY_WARN_HOLD = 5
 
@@ -420,7 +421,7 @@ def parse_wrapper_overrides(args: list[str]) -> tuple[list[str], dict[str, Any]]
 
 def extract_launch_cwd(
     args: list[str],
-) -> tuple[Path | None, list[str], "RemoteSpec | None"]:
+) -> tuple[Path | None, list[str], RemoteSpec | None]:
     """Extract the directory (or remote spec) from the head of *args*.
 
     Returns ``(local_path, remaining_args, remote_spec)``.  When the first arg

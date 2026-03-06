@@ -102,15 +102,15 @@ def parse_gemini_api_body(body_text: str, role_default: str = "user") -> list[st
 
     # Handle SSE (Server-Sent Events) format in responses
     if body_text.startswith("data: "):
-        out = []
+        sse_out: list[str] = []
         for line in body_text.splitlines():
             if line.startswith("data: "):
                 try:
                     data = json.loads(line[6:])
-                    out.extend(parse_gemini_api_body(json.dumps(data), role_default="assistant"))
+                    sse_out.extend(parse_gemini_api_body(json.dumps(data), role_default="assistant"))
                 except json.JSONDecodeError:
                     pass
-        return out
+        return sse_out
 
     try:
         body = json.loads(body_text)
@@ -125,10 +125,10 @@ def parse_gemini_api_body(body_text: str, role_default: str = "user") -> list[st
             # Could be a list of responses in stream mode.
             resp = body["response"]
             if isinstance(resp, list):
-                out = []
+                resp_out: list[str] = []
                 for r in resp:
-                    out.extend(parse_gemini_api_body(json.dumps(r), role_default="assistant"))
-                return out
+                    resp_out.extend(parse_gemini_api_body(json.dumps(r), role_default="assistant"))
+                return resp_out
             body = resp
 
     out: list[str] = []
@@ -189,7 +189,7 @@ def query_traffic_turns(
         for r in rows:
             ts = r["ts"]
             rid = r["id"]
-            
+
             # Request -> User
             if r["req_body"]:
                 texts = parse_gemini_api_body(r["req_body"], role_default="user")
@@ -424,7 +424,7 @@ def parse_gemini_chat_json(path: Path) -> list[dict[str, Any]]:
         role_raw = str(msg.get("type", "")).lower()
         role = "user" if role_raw == "user" else "assistant"
         ts = _normalize_timestamp(msg.get("timestamp"))
-        
+
         # Prefer displayContent for user messages to show the original command.
         content_parts = _extract_text(msg.get("displayContent") or msg.get("content"))
         text = "\n".join(content_parts).strip()
@@ -534,7 +534,7 @@ def infer_session_cwd(path: Path, max_lines: int = 150) -> str:
                         val = match.group(1)
                         if val.startswith("/") or "~" in val:
                              return _normalize_cwd(_decode_json_string(val))
-            
+
             # Deeper scan if line-by-line failed
             for pattern in _CWD_PATTERNS:
                 match = pattern.search(text_block)
@@ -581,7 +581,7 @@ def sessions_for_working_dir(
         if session.agent == "claude" and slug in str(session.path.parent):
             matched.append(session)
             continue
-        
+
         # Gemini JSON sessions check projectHash
         if session.agent == "gemini" and session.path.suffix == ".json":
             try:
@@ -1267,7 +1267,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     # ── Legacy mode (JSONL file discovery) ────────────────────────────
     sessions = discover_sessions(target=args.target, agent=args.agent)
-    
+
     if not sessions and args.agent not in ("all", "gemini"):
         print("No sessions found for the given filters.", file=sys.stderr)
         return 1

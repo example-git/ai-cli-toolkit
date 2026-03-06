@@ -7,7 +7,9 @@ from types import SimpleNamespace
 from ai_cli import prompt_editor_launcher as launcher
 
 
-def test_open_editor_window_skips_duplicate_and_selects_existing(monkeypatch, tmp_path: Path) -> None:
+def test_open_editor_window_skips_duplicate_and_selects_existing(
+    monkeypatch, tmp_path: Path
+) -> None:
     target = tmp_path / "system.txt"
     target.write_text("", encoding="utf-8")
     lock_dir = tmp_path / "locks"
@@ -55,7 +57,9 @@ def test_open_editor_window_spawns_tmux_window(monkeypatch, tmp_path: Path) -> N
     target = tmp_path / "tool.txt"
     lock_dir = tmp_path / "locks"
     monkeypatch.setattr(launcher, "_lock_dir", lambda: lock_dir)
-    monkeypatch.setattr(launcher, "_tmux", lambda socket_name, *args: SimpleNamespace(returncode=0, stderr=""))
+    monkeypatch.setattr(
+        launcher, "_tmux", lambda socket_name, *args: SimpleNamespace(returncode=0, stderr="")
+    )
 
     rc = launcher.main(
         [

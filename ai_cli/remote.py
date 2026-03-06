@@ -16,7 +16,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TextIO
 
 # Pattern: user@host:/path  or  user@host:path  (colon required to disambiguate)
 _REMOTE_RE = re.compile(
@@ -275,7 +275,7 @@ def cleanup_mirror(spec: RemoteSpec) -> bool:
     return False
 
 
-def print_sync_status(msg: str, *, file: object = None) -> None:
+def print_sync_status(msg: str, *, file: TextIO | None = None) -> None:
     """Print a coloured status line for remote sync operations."""
     print(f"\033[1;36m[remote]\033[0m {msg}", file=file or sys.stderr)
 

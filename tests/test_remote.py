@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch, MagicMock
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from ai_cli.remote import (
     RemoteSessionRunner,
@@ -15,7 +13,6 @@ from ai_cli.remote import (
     parse_remote_spec,
     resolve_remote_tool_env,
 )
-
 
 # ---------------------------------------------------------------------------
 # parse_remote_spec
@@ -227,4 +224,7 @@ def test_remote_runner_exec_attached_bootstraps_packaged_home(monkeypatch) -> No
     remote_cmd = calls[0][-1]
     assert "export HOME=/home/alice/.ai-cli/remote-sessions/codex-abc123" in remote_cmd
     assert "export PATH=/opt/node/bin:/usr/bin:/bin" in remote_cmd
-    assert "/home/alice/.ai-cli/remote-sessions/codex-abc123/.ai-cli/bin/ai-mux --config /home/alice/.ai-cli/remote-sessions/codex-abc123/.ai-cli/ai-mux.json" in remote_cmd
+    assert (
+        "/home/alice/.ai-cli/remote-sessions/codex-abc123/.ai-cli/bin/ai-mux --config /home/alice/.ai-cli/remote-sessions/codex-abc123/.ai-cli/ai-mux.json"
+        in remote_cmd
+    )

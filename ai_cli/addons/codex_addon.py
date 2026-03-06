@@ -336,10 +336,6 @@ class DeveloperInstructionInjector:
             log(log_file, "WebSocket passthrough - not injecting")
             return
 
-        flow_id = id(flow)
-        if flow_id in self._ws_injected_flows:
-            return
-
         message = flow.websocket.messages[-1]
         if not message.from_client:
             return
@@ -360,7 +356,6 @@ class DeveloperInstructionInjector:
 
         updated = json.dumps(body)
         message.content = updated.encode("utf-8") if isinstance(raw_content, bytes) else updated
-        self._ws_injected_flows.add(flow_id)
         log(
             log_file,
             (

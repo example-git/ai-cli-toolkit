@@ -7,18 +7,16 @@ from types import SimpleNamespace
 from ai_cli.remote import RemoteSpec
 from ai_cli.remote_package import (
     PackageFileEntry,
+    RemotePackage,
     build_package_manifest,
     ensure_remote_ai_mux_asset,
-    local_ai_mux_asset_path,
     push_package,
     reattach_remote_session,
     render_remote_ai_mux_config,
 )
 
 
-def test_build_package_manifest_resolves_absolute_remote_home(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_build_package_manifest_resolves_absolute_remote_home(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(
         "ai_cli.remote_package.resolve_remote_home",
@@ -36,17 +34,18 @@ def test_build_package_manifest_resolves_absolute_remote_home(
     assert "~" not in package.session_dir
 
 
-def test_push_package_uses_portable_rsync_chmod(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_push_package_uses_portable_rsync_chmod(monkeypatch, tmp_path: Path) -> None:
     local_file = tmp_path / "config.toml"
     local_file.write_text("x = 1\n", encoding="utf-8")
 
-    package = SimpleNamespace(
-        entries=[PackageFileEntry(local_path=local_file, remote_rel_path=".codex/config.toml")],
-        session_dir="/home/alice/.ai-cli/remote-sessions/codex-abc123",
+    package = RemotePackage(
         tool_name="codex",
         real_home="/home/alice",
+        session_dir="/home/alice/.ai-cli/remote-sessions/codex-abc123",
+        tmux_socket="ai-cli-codex",
+        session_name="codex-abc123",
+        project_prompt_rel_path=".ai-cli/prompts/project.txt",
+        entries=[PackageFileEntry(local_path=local_file, remote_rel_path=".codex/config.toml")],
     )
     remote_spec = RemoteSpec(user="alice", host="server", path="/repo")
 
@@ -64,15 +63,16 @@ def test_push_package_uses_portable_rsync_chmod(
     assert len(calls) >= 3
     assert calls[0][-1] == "mkdir -p /home/alice/.ai-cli/remote-sessions/codex-abc123"
     assert "--chmod=Du=rwx,Dgo=,Fu=rw,Fgo=" in calls[1]
-    assert "chmod 700 /home/alice/.ai-cli/remote-sessions/codex-abc123/.ai-cli/bin/ai-prompt-editor" in calls[2][-1]
+    assert (
+        "chmod 700 /home/alice/.ai-cli/remote-sessions/codex-abc123/.ai-cli/bin/ai-prompt-editor"
+        in calls[2][-1]
+    )
     # Real-home push for tool config files
     real_home_pushes = [c for c in calls if any("__real_home__" in str(a) for a in c)]
     assert len(real_home_pushes) <= 1
 
 
-def test_build_package_manifest_includes_codex_startup_files(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_build_package_manifest_includes_codex_startup_files(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(
         "ai_cli.remote_package.resolve_remote_home",
@@ -84,7 +84,9 @@ def test_build_package_manifest_includes_codex_startup_files(
     (tmp_path / ".codex" / "config.toml").write_text("model='gpt'\n", encoding="utf-8")
     (tmp_path / ".codex" / ".codex-global-state.json").write_text("{}", encoding="utf-8")
     (tmp_path / ".codex" / "policy").mkdir()
-    (tmp_path / ".codex" / "policy" / "default.codexpolicy").write_text("allow = true\n", encoding="utf-8")
+    (tmp_path / ".codex" / "policy" / "default.codexpolicy").write_text(
+        "allow = true\n", encoding="utf-8"
+    )
 
     package = build_package_manifest(
         "codex",
@@ -117,23 +119,22 @@ def test_build_package_manifest_includes_claude_gemini_and_copilot_files(
 
     (tmp_path / ".copilot" / "agents").mkdir(parents=True)
     (tmp_path / ".copilot" / "config.json").write_text("{}", encoding="utf-8")
-    (tmp_path / ".copilot" / "agents" / "dev-instructions.agent.md").write_text("x", encoding="utf-8")
+    (tmp_path / ".copilot" / "agents" / "dev-instructions.agent.md").write_text(
+        "x", encoding="utf-8"
+    )
     (tmp_path / ".config" / "github-copilot").mkdir(parents=True)
     (tmp_path / ".config" / "github-copilot" / "apps.json").write_text("{}", encoding="utf-8")
 
     spec = RemoteSpec(user="alice", host="server", path="/repo")
 
     claude_rels = {
-        entry.remote_rel_path
-        for entry in build_package_manifest("claude", spec).entries
+        entry.remote_rel_path for entry in build_package_manifest("claude", spec).entries
     }
     gemini_rels = {
-        entry.remote_rel_path
-        for entry in build_package_manifest("gemini", spec).entries
+        entry.remote_rel_path for entry in build_package_manifest("gemini", spec).entries
     }
     copilot_rels = {
-        entry.remote_rel_path
-        for entry in build_package_manifest("copilot", spec).entries
+        entry.remote_rel_path for entry in build_package_manifest("copilot", spec).entries
     }
 
     assert ".claude/settings.json" in claude_rels
@@ -184,9 +185,18 @@ def test_build_package_manifest_generates_shell_bootstrap_and_tmux_config(
     assert any(rel.endswith("/meta.json") for rel in project_prompt_rels)
     assert "ai_rules" in contents[".ai-cli/shell-common.sh"]
     assert "shell-commands.log" in contents[".ai-cli/shell-common.sh"]
-    assert 'AI_CLI_BASE_PROMPT_FILE="$HOME/.ai-cli/base_instructions.txt"' in contents[".ai-cli/shell-common.sh"]
-    assert 'export AI_CLI_PROJECT_PROMPT_FILE="$HOME/.ai-cli/project-prompts/' in contents[".ai-cli/shell-common.sh"]
-    assert 'AI_CLI_PROMPT_EDITOR_LAUNCHER="$HOME/.ai-cli/bin/ai-prompt-editor"' in contents[".ai-cli/shell-common.sh"]
+    assert (
+        'AI_CLI_BASE_PROMPT_FILE="$HOME/.ai-cli/base_instructions.txt"'
+        in contents[".ai-cli/shell-common.sh"]
+    )
+    assert (
+        'export AI_CLI_PROJECT_PROMPT_FILE="$HOME/.ai-cli/project-prompts/'
+        in contents[".ai-cli/shell-common.sh"]
+    )
+    assert (
+        'AI_CLI_PROMPT_EDITOR_LAUNCHER="$HOME/.ai-cli/bin/ai-prompt-editor"'
+        in contents[".ai-cli/shell-common.sh"]
+    )
     assert "trap '_ai_cli_bash_debug_hook' DEBUG" in contents[".bash_env"]
     assert "add-zsh-hook preexec _ai_cli_zsh_preexec" in contents[".zshrc"]
     assert "set -g mouse on" in contents[".tmux.conf"]
@@ -273,7 +283,9 @@ def test_ensure_remote_ai_mux_asset_rebuilds_even_when_cached(monkeypatch, tmp_p
 
     assert resolved == asset
     assert asset.read_bytes() == b"fresh"
-    assert any("cargo build --release" in cmd[-1] for cmd in calls if cmd and Path(cmd[0]).name == "ssh")
+    assert any(
+        "cargo build --release" in cmd[-1] for cmd in calls if cmd and Path(cmd[0]).name == "ssh"
+    )
 
 
 def test_reattach_remote_session_sources_packaged_tmux_conf(monkeypatch) -> None:
@@ -285,10 +297,13 @@ def test_reattach_remote_session_sources_packaged_tmux_conf(monkeypatch) -> None
 
     monkeypatch.setattr("ai_cli.remote_package.subprocess.run", _run)
 
-    package = SimpleNamespace(
+    package = RemotePackage(
+        tool_name="codex",
+        real_home="/home/alice",
+        session_dir="/home/alice/.ai-cli/remote-sessions/codex-abc123",
         tmux_socket="ai-cli-codex",
         session_name="codex-abc123",
-        session_dir="/home/alice/.ai-cli/remote-sessions/codex-abc123",
+        project_prompt_rel_path=".ai-cli/prompts/project.txt",
     )
     spec = RemoteSpec(user="alice", host="server", path="/repo")
 
@@ -296,5 +311,8 @@ def test_reattach_remote_session_sources_packaged_tmux_conf(monkeypatch) -> None
 
     assert rc == 0
     remote_cmd = calls[0][-1]
-    assert "tmux -L ai-cli-codex source-file /home/alice/.ai-cli/remote-sessions/codex-abc123/.tmux.conf" in remote_cmd
+    assert (
+        "tmux -L ai-cli-codex source-file /home/alice/.ai-cli/remote-sessions/codex-abc123/.tmux.conf"
+        in remote_cmd
+    )
     assert "tmux -L ai-cli-codex attach -t codex-abc123" in remote_cmd

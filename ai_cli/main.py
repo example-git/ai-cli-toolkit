@@ -67,6 +67,7 @@ from ai_cli.proxy import (
     stop_process,
     verify_proxy_flow,
 )
+from ai_cli.remote import RemoteSpec
 from ai_cli.tools import TOOL_ALIASES, load_registry, ToolSpec
 
 
@@ -167,7 +168,7 @@ def _parse_wrapper_overrides(args: list[str]) -> tuple[list[str], dict[str, Any]
     return _mh_parse_wrapper_overrides(args)
 
 
-def _extract_launch_cwd(args: list[str]) -> tuple[Path | None, list[str], "RemoteSpec | None"]:
+def _extract_launch_cwd(args: list[str]) -> tuple[Path | None, list[str], RemoteSpec | None]:
     return _mh_extract_launch_cwd(args)
 
 
@@ -179,7 +180,7 @@ def _ai_mux_status() -> tuple[str, str | None]:
     return _mh_ai_mux_status()
 
 
-def _default_remote_session_name(tool_name: str, remote_spec: "RemoteSpec") -> str:
+def _default_remote_session_name(tool_name: str, remote_spec: RemoteSpec) -> str:
     digest = hashlib.sha256(
         f"{tool_name}:{remote_spec.display}".encode("utf-8")
     ).hexdigest()[:12]
@@ -317,6 +318,9 @@ def run_tool(tool_name: str, args: list[str]) -> int:
     _remote_session_flag = (
         remote_spec is not None and not _remote_rsync_flag
     )
+
+    local_mirror: Path | None = None
+    runner: RemoteSessionRunner | None = None
 
     # ── Remote folder proxy (rsync mode — only when explicitly requested) ─
     if remote_spec is not None and _remote_rsync_flag:
@@ -779,7 +783,7 @@ def run_tool(tool_name: str, args: list[str]) -> int:
                 push_package(package, remote_spec)
 
                 if remote_ai_mux_binary is not None:
-                    runner = RemoteSessionRunner(
+                    pkg_runner = RemoteSessionRunner(
                         spec=remote_spec,
                         session_name=package.session_name,
                     )
@@ -789,7 +793,7 @@ def run_tool(tool_name: str, args: list[str]) -> int:
                         f"--session-name {_shlex.quote(package.session_name)} "
                         f"--socket-name {_shlex.quote(package.tmux_socket)}"
                     )
-                    exit_code = runner.exec_attached(
+                    exit_code = pkg_runner.exec_attached(
                         command=ai_mux_launch,
                         proxy_port=_effective_proxy_port,
                         home_dir=package.session_dir,
@@ -811,7 +815,7 @@ def run_tool(tool_name: str, args: list[str]) -> int:
                         )
                         append_log(log_path, f"Remote reattach exit code: {exit_code}")
                     else:
-                        runner = RemoteSessionRunner(
+                        pkg_runner = RemoteSessionRunner(
                             spec=remote_spec,
                             session_name=package.session_name,
                         )
@@ -821,7 +825,7 @@ def run_tool(tool_name: str, args: list[str]) -> int:
                         else:
                             init_sequence = cd_cmd
 
-                        exit_code = runner.run_attached(
+                        exit_code = pkg_runner.run_attached(
                             command=remote_tool_cmd,
                             init_cmd=init_sequence,
                             proxy_port=_effective_proxy_port,
@@ -885,10 +889,11 @@ def run_tool(tool_name: str, args: list[str]) -> int:
             append_log(log_path, f"Remote session failed: {exc}")
             exit_code = 1
         finally:
-            try:
-                runner.pull_logs(log_dir)  # type: ignore[possibly-undefined]
-            except Exception as exc:
-                append_log(log_path, f"Remote log pull failed: {exc}")
+            if runner is not None:
+                try:
+                    runner.pull_logs(log_dir)
+                except Exception as exc:
+                    append_log(log_path, f"Remote log pull failed: {exc}")
             if mitm_proc is not None:
                 try:
                     stop_process(mitm_proc)
@@ -1031,12 +1036,12 @@ def run_tool(tool_name: str, args: list[str]) -> int:
         return exit_code
     finally:
         # ── Remote sync-up ───────────────────────────────────────────────
-        if remote_spec is not None and not remote_sync_deferred:
+        if remote_spec is not None and not remote_sync_deferred and local_mirror is not None:
             from ai_cli.remote import print_sync_status, sync_up
 
             print_sync_status(f"Syncing edits back to {remote_spec.display} …")
             try:
-                sync_up(remote_spec, local_mirror)  # type: ignore[possibly-undefined]
+                sync_up(remote_spec, local_mirror)
                 print_sync_status("Upload complete ✓")
                 append_log(log_path, f"Remote sync-up complete: {remote_spec.display}")
             except (RuntimeError, FileNotFoundError) as exc:
