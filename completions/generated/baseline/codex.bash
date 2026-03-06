@@ -19,6 +19,9 @@ _codex() {
             codex,a)
                 cmd="codex__apply"
                 ;;
+            codex,app)
+                cmd="codex__app"
+                ;;
             codex,app-server)
                 cmd="codex__app__server"
                 ;;
@@ -136,6 +139,9 @@ _codex() {
             codex__debug,app-server)
                 cmd="codex__debug__app__server"
                 ;;
+            codex__debug,clear-memories)
+                cmd="codex__debug__clear__memories"
+                ;;
             codex__debug,help)
                 cmd="codex__debug__help"
                 ;;
@@ -153,6 +159,9 @@ _codex() {
                 ;;
             codex__debug__help,app-server)
                 cmd="codex__debug__help__app__server"
+                ;;
+            codex__debug__help,clear-memories)
+                cmd="codex__debug__help__clear__memories"
                 ;;
             codex__debug__help,help)
                 cmd="codex__debug__help__help"
@@ -213,6 +222,9 @@ _codex() {
                 ;;
             codex__features__help,list)
                 cmd="codex__features__help__list"
+                ;;
+            codex__help,app)
+                cmd="codex__help__app"
                 ;;
             codex__help,app-server)
                 cmd="codex__help__app__server"
@@ -294,6 +306,9 @@ _codex() {
                 ;;
             codex__help__debug,app-server)
                 cmd="codex__help__debug__app__server"
+                ;;
+            codex__help__debug,clear-memories)
+                cmd="codex__help__debug__clear__memories"
                 ;;
             codex__help__debug__app__server,send-message-v2)
                 cmd="codex__help__debug__app__server__send__message__v2"
@@ -437,7 +452,7 @@ _codex() {
 
     case "${cmd}" in
         codex)
-            opts="-c -i -m -p -s -a -C -h -V --config --enable --disable --image --model --oss --local-provider --profile --sandbox --ask-for-approval --full-auto --dangerously-bypass-approvals-and-sandbox --cd --search --add-dir --no-alt-screen --help --version [PROMPT] exec e review login logout mcp mcp-server app-server completion sandbox debug execpolicy apply a resume fork cloud responses-api-proxy stdio-to-uds features help"
+            opts="-c -i -m -p -s -a -C -h -V --config --enable --disable --image --model --oss --local-provider --profile --sandbox --ask-for-approval --full-auto --dangerously-bypass-approvals-and-sandbox --cd --search --add-dir --no-alt-screen --help --version [PROMPT] exec e review login logout mcp mcp-server app-server app completion sandbox debug execpolicy apply a resume fork cloud responses-api-proxy stdio-to-uds features help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -516,6 +531,40 @@ _codex() {
                     if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
                         compopt -o plusdirs
                     fi
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        codex__app)
+            opts="-c -h --download-url --config --enable --disable --help [PATH]"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --download-url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --config)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --enable)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --disable)
+                    COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 *)
@@ -1070,7 +1119,7 @@ _codex() {
             return 0
             ;;
         codex__debug)
-            opts="-c -h --config --enable --disable --help app-server help"
+            opts="-c -h --config --enable --disable --help app-server clear-memories help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1201,8 +1250,38 @@ _codex() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        codex__debug__clear__memories)
+            opts="-c -h --config --enable --disable --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --config)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --enable)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --disable)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         codex__debug__help)
-            opts="app-server help"
+            opts="app-server clear-memories help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1243,6 +1322,20 @@ _codex() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        codex__debug__help__clear__memories)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         codex__debug__help__help)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
@@ -1258,7 +1351,7 @@ _codex() {
             return 0
             ;;
         codex__exec)
-            opts="-i -m -s -p -C -o -c -h -V --image --model --oss --local-provider --sandbox --profile --full-auto --dangerously-bypass-approvals-and-sandbox --cd --skip-git-repo-check --add-dir --ephemeral --output-schema --color --json --output-last-message --config --enable --disable --help --version [PROMPT] resume review help"
+            opts="-i -m -s -p -C -o -c -h -V --image --model --oss --local-provider --sandbox --profile --full-auto --dangerously-bypass-approvals-and-sandbox --cd --skip-git-repo-check --add-dir --ephemeral --output-schema --color --progress-cursor --json --output-last-message --config --enable --disable --help --version [PROMPT] resume review help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1411,7 +1504,7 @@ _codex() {
             return 0
             ;;
         codex__exec__resume)
-            opts="-i -m -c -h --last --all --image --model --full-auto --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --ephemeral --json --config --enable --disable --help [SESSION_ID] [PROMPT]"
+            opts="-i -m -o -c -h --last --all --image --model --full-auto --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --ephemeral --json --output-last-message --config --enable --disable --help [SESSION_ID] [PROMPT]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1430,6 +1523,14 @@ _codex() {
                     return 0
                     ;;
                 -m)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output-last-message)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1457,7 +1558,7 @@ _codex() {
             return 0
             ;;
         codex__exec__review)
-            opts="-m -c -h --uncommitted --base --commit --title --model --full-auto --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --ephemeral --json --config --enable --disable --help [PROMPT]"
+            opts="-m -o -c -h --uncommitted --base --commit --title --model --full-auto --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --ephemeral --json --output-last-message --config --enable --disable --help [PROMPT]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1480,6 +1581,14 @@ _codex() {
                     return 0
                     ;;
                 -m)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output-last-message)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1537,7 +1646,7 @@ _codex() {
             return 0
             ;;
         codex__execpolicy__check)
-            opts="-r -c -h --rules --pretty --config --enable --disable --help <COMMAND>..."
+            opts="-r -c -h --rules --pretty --resolve-host-executables --config --enable --disable --help <COMMAND>..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1896,8 +2005,22 @@ _codex() {
             return 0
             ;;
         codex__help)
-            opts="exec review login logout mcp mcp-server app-server completion sandbox debug execpolicy apply resume fork cloud responses-api-proxy stdio-to-uds features help"
+            opts="exec review login logout mcp mcp-server app-server app completion sandbox debug execpolicy apply resume fork cloud responses-api-proxy stdio-to-uds features help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        codex__help__app)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
@@ -2064,7 +2187,7 @@ _codex() {
             return 0
             ;;
         codex__help__debug)
-            opts="app-server"
+            opts="app-server clear-memories"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2094,6 +2217,20 @@ _codex() {
         codex__help__debug__app__server__send__message__v2)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 5 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        codex__help__debug__clear__memories)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
@@ -3438,3 +3575,4 @@ if [[ "${BASH_VERSINFO[0]}" -eq 4 && "${BASH_VERSINFO[1]}" -ge 4 || "${BASH_VERS
 else
     complete -F _codex -o bashdefault -o default codex
 fi
+WARNING: failed to clean up stale arg0 temp dirs: Permission denied (os error 13)

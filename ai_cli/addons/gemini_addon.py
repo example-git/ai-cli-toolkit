@@ -1,7 +1,12 @@
 """Gemini CLI system instruction injection addon for mitmproxy.
 
-Intercepts POST /v1beta/models/*/generateContent and injects instructions
-into body["systemInstruction"] (Google AI API format).
+Intercepts Gemini generateContent requests for both public API paths
+(`/v1*/models/*:generateContent`) and Code Assist internal paths
+(`/v1internal:generateContent`, `/v1internal:streamGenerateContent`).
+
+Injection target:
+- Public API: ``body["systemInstruction"]``
+- Code Assist internal API: ``body["request"]["systemInstruction"]``
 
 Self-contained — no ai_cli imports (loaded by mitmdump directly).
 """
@@ -35,6 +40,25 @@ def _normalize_developer_mode(value: str) -> str:
     if mode in {"overwrite", "append", "prepend"}:
         return mode
     return "overwrite"
+
+
+def _path_matches_target(path: str, target: str) -> bool:
+    target_value = (target or "").strip()
+    if not target_value:
+        return True
+    needles = [part.strip().lower() for part in target_value.split(",") if part.strip()]
+    if not needles:
+        return True
+    path_lower = (path or "").lower()
+    return any(needle in path_lower for needle in needles)
+
+
+def _is_generate_content_path(path: str) -> bool:
+    return "generatecontent" in (path or "").lower()
+
+
+def _uses_internal_request_envelope(path: str) -> bool:
+    return "/v1internal:" in (path or "").lower()
 
 
 def _section(tag: str, text: str) -> str:
@@ -162,7 +186,7 @@ from mitmproxy import ctx, http  # type: ignore[import-untyped]
 class GeminiSystemInstructionInjector:
     """Inject system instructions into Google AI (Gemini) API requests.
 
-    Google AI uses body["systemInstruction"] with this shape:
+    System instruction shape:
         {"parts": [{"text": "..."}]}
     """
 
@@ -176,7 +200,7 @@ class GeminiSystemInstructionInjector:
         loader.add_option("canary_rule", str,
                           "CANARY RULE: Prefix every assistant response with: DEV:",
                           "Canary instruction prepended before system instructions.")
-        loader.add_option("target_path", str, "/v1beta/models",
+        loader.add_option("target_path", str, "/v1beta/models,/v1alpha/models,/v1/models,/v1internal:",
                           "Only inject for request paths containing this value.")
         loader.add_option("wrapper_log_file", str, "",
                           "Path to wrapper log file for addon diagnostics.")
@@ -209,11 +233,14 @@ class GeminiSystemInstructionInjector:
         if flow.request.method.upper() != "POST":
             return
 
-        target = getattr(ctx.options, "target_path", "/v1beta/models") or ""
-        if target and target not in flow.request.path:
+        path = flow.request.path or ""
+        target = getattr(
+            ctx.options, "target_path", "/v1beta/models,/v1alpha/models,/v1/models,/v1internal:"
+        ) or ""
+        if not _path_matches_target(path, target):
             return
-        # Only match generateContent endpoints
-        if "generateContent" not in flow.request.path:
+        # Only match generate/stream generateContent endpoints.
+        if not _is_generate_content_path(path):
             return
 
         log_file = getattr(ctx.options, "wrapper_log_file", "") or ""
@@ -222,7 +249,7 @@ class GeminiSystemInstructionInjector:
             getattr(ctx.options, "developer_instructions_mode", "overwrite") or "overwrite"
         )
 
-        _log(log_file, f"Addon saw request: method={flow.request.method} path={flow.request.path}")
+        _log(log_file, f"Addon saw request: method={flow.request.method} path={path}")
 
         body_text = flow.request.get_text(strict=False)
         if not body_text:
@@ -250,9 +277,20 @@ class GeminiSystemInstructionInjector:
             _log(log_file, "Addon skip: layered sections are empty")
             return
 
-        # Google AI systemInstruction format:
-        # {"parts": [{"text": "instruction text"}]}
-        existing = body.get("systemInstruction")
+        # Google AI public API uses body.systemInstruction.
+        # Gemini Code Assist (v1internal) uses body.request.systemInstruction.
+        container: dict[str, Any] = body
+        if _uses_internal_request_envelope(path):
+            request_obj = body.get("request")
+            if not isinstance(request_obj, dict):
+                _log(log_file, "Addon skip: v1internal payload missing request object")
+                return
+            container = request_obj
+            # Prevent schema errors for internal endpoint.
+            body.pop("systemInstruction", None)
+
+        # System instruction shape: {"parts": [{"text": "..."}]}
+        existing = container.get("systemInstruction")
         existing_text = _system_instruction_text(existing)
         recurring_model = _extract_recurring_model_prompt(existing_text)
         overwrite_text = _compose_overwrite_sections(
@@ -264,18 +302,27 @@ class GeminiSystemInstructionInjector:
         if merged == existing_text and existing_text:
             _log(log_file, f"Addon skip: system instruction already matches (mode={merge_mode})")
             return
-        body["systemInstruction"] = {"parts": [{"text": merged}]}
+        container["systemInstruction"] = {"parts": [{"text": merged}]}
 
         flow.request.set_text(json.dumps(body))
-        _log(log_file, f"Addon injected layered system instruction (mode={merge_mode})")
+        target_scope = "request.systemInstruction" if container is not body else "systemInstruction"
+        _log(
+            log_file,
+            f"Addon injected layered system instruction at {target_scope} (mode={merge_mode})",
+        )
 
     def response(self, flow: http.HTTPFlow) -> None:
-        target = getattr(ctx.options, "target_path", "/v1beta/models") or ""
-        if target and target not in flow.request.path:
+        path = flow.request.path or ""
+        target = getattr(
+            ctx.options, "target_path", "/v1beta/models,/v1alpha/models,/v1/models,/v1internal:"
+        ) or ""
+        if not _path_matches_target(path, target):
+            return
+        if not _is_generate_content_path(path):
             return
         log_file = getattr(ctx.options, "wrapper_log_file", "") or ""
         status = flow.response.status_code if flow.response else "no response"
-        _log(log_file, f"Addon saw response: status={status} path={flow.request.path}")
+        _log(log_file, f"Addon saw response: status={status} path={path}")
 
 
 addons = [GeminiSystemInstructionInjector()]

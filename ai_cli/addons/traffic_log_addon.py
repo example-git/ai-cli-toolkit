@@ -36,6 +36,8 @@ _CONFIRMED_API_PATHS: dict[str, list[str]] = {
         "/v1beta/models",
         "/v1alpha/models",
         "/v1/models",
+        "/v1internal:generateContent",
+        "/v1internal:streamGenerateContent",
     ],
 }
 
@@ -76,12 +78,23 @@ def _identify(host: str, path: str) -> tuple[str, bool]:
     confirmed API endpoint (content should be logged).
     """
     host_lower = host.lower()
+    # Normalize doubled slashes (e.g. /backend-api//connector) before matching.
+    path_norm = re.sub(r"/{2,}", "/", path or "")
+
+    # Host-specific endpoints used by Codex/ChatGPT surfaces.
+    if "chatgpt.com" in host_lower:
+        if path_norm.startswith("/backend-api/wham/apps"):
+            return "openai", True
+        if path_norm.startswith("/backend-api/connector"):
+            return "openai", True
+    if "developers.openai.com" in host_lower and path_norm.startswith("/mcp"):
+        return "openai", True
 
     # Path-first: if path matches a confirmed endpoint we know the
     # provider and it's a confirmed API call.
     for provider, patterns in _CONFIRMED_API_PATHS.items():
         for pat in patterns:
-            if pat in path:
+            if pat in path_norm:
                 return provider, True
 
     # Host heuristic: tag the provider but don't log content.

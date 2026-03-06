@@ -7,6 +7,7 @@ unified discovery and parsing across multiple agent session stores.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import signal
@@ -25,6 +26,7 @@ from ai_cli.session_store import (
     query_store_turns as _query_store_turns_sql,
     search_store as _search_store_sql,
 )
+from ai_cli.traffic_db import DEFAULT_DB_PATH as TRAFFIC_DB_PATH
 
 
 AGENTS = ("claude", "codex", "copilot", "gemini")
@@ -93,6 +95,134 @@ def query_store_files(
     )
 
 
+def parse_gemini_api_body(body_text: str, role_default: str = "user") -> list[str]:
+    """Extract text from Gemini API generateContent request/response bodies."""
+    if not body_text:
+        return []
+
+    # Handle SSE (Server-Sent Events) format in responses
+    if body_text.startswith("data: "):
+        out = []
+        for line in body_text.splitlines():
+            if line.startswith("data: "):
+                try:
+                    data = json.loads(line[6:])
+                    out.extend(parse_gemini_api_body(json.dumps(data), role_default="assistant"))
+                except json.JSONDecodeError:
+                    pass
+        return out
+
+    try:
+        body = json.loads(body_text)
+    except json.JSONDecodeError:
+        return []
+
+    # Internal envelope for Code Assist: body["request"] or body["response"]
+    if isinstance(body, dict):
+        if "request" in body and isinstance(body["request"], dict):
+            body = body["request"]
+        if "response" in body and isinstance(body["response"], (dict, list)):
+            # Could be a list of responses in stream mode.
+            resp = body["response"]
+            if isinstance(resp, list):
+                out = []
+                for r in resp:
+                    out.extend(parse_gemini_api_body(json.dumps(r), role_default="assistant"))
+                return out
+            body = resp
+
+    out: list[str] = []
+    if isinstance(body, dict):
+        # Public API Request: contents[] -> parts[] -> text
+        if "contents" in body and isinstance(body["contents"], list):
+            for entry in body["contents"]:
+                parts = entry.get("parts", [])
+                if isinstance(parts, list):
+                    for p in parts:
+                        if isinstance(p, dict) and "text" in p:
+                            out.append(str(p["text"]))
+        # Public API Response: candidates[] -> content -> parts[] -> text
+        if "candidates" in body and isinstance(body["candidates"], list):
+            for cand in body["candidates"]:
+                content = cand.get("content", {})
+                if isinstance(content, dict):
+                    parts = content.get("parts", [])
+                    if isinstance(parts, list):
+                        for p in parts:
+                            if isinstance(p, dict) and "text" in p:
+                                out.append(str(p["text"]))
+        # Fallback for simple message/text fields
+        if not out:
+            for key in ("text", "content", "message"):
+                if key in body and isinstance(body[key], str):
+                    out.append(body[key])
+
+    return out
+
+
+def query_traffic_turns(
+    db_path: Path = TRAFFIC_DB_PATH,
+    agent: str = "gemini",
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """Extract conversation turns from the traffic log (SQLite)."""
+    if not db_path.is_file():
+        return []
+
+    import sqlite3
+    provider_map = {"gemini": "google", "claude": "anthropic", "openai": "openai"}
+    provider = provider_map.get(agent, agent)
+
+    turns: list[dict[str, Any]] = []
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        # Query API rows with bodies.
+        rows = conn.execute(
+            "SELECT id, ts, method, path, req_body, resp_body FROM traffic "
+            "WHERE provider = ? AND is_api = 1 AND (req_body IS NOT NULL OR resp_body IS NOT NULL) "
+            "ORDER BY ts DESC LIMIT ?",
+            (provider, limit),
+        ).fetchall()
+        conn.close()
+
+        for r in rows:
+            ts = r["ts"]
+            rid = r["id"]
+            
+            # Request -> User
+            if r["req_body"]:
+                texts = parse_gemini_api_body(r["req_body"], role_default="user")
+                for t in texts:
+                    turns.append({
+                        "agent": agent,
+                        "role": "user",
+                        "type": "text",
+                        "content": t,
+                        "timestamp": ts,
+                        "file": f"traffic.db:{rid}",
+                        "line": rid,
+                    })
+
+            # Response -> Assistant
+            if r["resp_body"]:
+                texts = parse_gemini_api_body(r["resp_body"], role_default="assistant")
+                for t in texts:
+                    turns.append({
+                        "agent": agent,
+                        "role": "assistant",
+                        "type": "text",
+                        "content": t,
+                        "timestamp": ts,
+                        "file": f"traffic.db:{rid}",
+                        "line": rid,
+                    })
+    except Exception:
+        pass
+
+    return turns
+
+
 def _list_store_sessions(db_path: Path, sessions: list[StoreSession]) -> int:
     """Print a table of session store sessions."""
     if not sessions:
@@ -116,6 +246,8 @@ _CWD_PATTERNS = (
     re.compile(r'"current_dir"\s*:\s*"([^"]+)"'),
     re.compile(r'"working_dir"\s*:\s*"([^"]+)"'),
     re.compile(r'"workingDirectory"\s*:\s*"([^"]+)"'),
+    re.compile(r'cwd=([^\r\n\s"]+)'),
+    re.compile(r'Workspace Directories:.*?\n\s*-\s*([^\r\n\s"]+)'),
 )
 
 
@@ -153,8 +285,42 @@ def _format_size(num: int) -> str:
     return f"{num}B"
 
 
-def _candidate_roots(agent: str) -> list[Path]:
+def _remote_log_roots(remote_host: str) -> list[Path]:
+    host = remote_host.strip()
+    if not host:
+        return []
+    logs_root = Path.home() / ".ai-cli" / "logs"
+    safe_host = re.sub(r"[^A-Za-z0-9_-]", "-", host)
+    candidates = [logs_root / f"remote-{safe_host}"]
+    if safe_host != host:
+        candidates.append(logs_root / f"remote-{host}")
+
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key in seen or not candidate.exists():
+            continue
+        seen.add(key)
+        roots.append(candidate)
+    return roots
+
+
+def _candidate_roots(agent: str, remote_host: str = "") -> list[Path]:
     home = Path.home()
+    if remote_host.strip():
+        roots: list[Path] = []
+        for base in _remote_log_roots(remote_host):
+            if agent == "claude":
+                roots.append(base / ".claude-projects")
+            elif agent == "codex":
+                roots.extend([base / ".codex-sessions", base / ".codex-projects"])
+            elif agent == "copilot":
+                roots.append(base / ".copilot-sessions")
+            elif agent == "gemini":
+                roots.append(base / ".gemini-sessions")
+        return roots
+
     if agent == "claude":
         return [home / ".claude" / "projects"]
     if agent == "codex":
@@ -171,6 +337,7 @@ def _candidate_roots(agent: str) -> list[Path]:
         ]
     if agent == "gemini":
         return [
+            home / ".gemini" / "tmp" / "ai-cli" / "chats",
             home / ".gemini" / "sessions",
             home / ".config" / "gemini" / "sessions",
             home / ".gemini",
@@ -178,7 +345,11 @@ def _candidate_roots(agent: str) -> list[Path]:
     return []
 
 
-def _discover_agent_files(agent: str, project_path: str = "") -> list[SessionFile]:
+def _discover_agent_files(
+    agent: str,
+    project_path: str = "",
+    remote_host: str = "",
+) -> list[SessionFile]:
     """Discover JSONL files for one agent.
 
     For Claude, an optional project path narrows discovery to the matching slug.
@@ -187,7 +358,10 @@ def _discover_agent_files(agent: str, project_path: str = "") -> list[SessionFil
     discovered: list[SessionFile] = []
 
     if agent == "claude":
-        root = _candidate_roots("claude")[0]
+        roots = _candidate_roots("claude", remote_host=remote_host)
+        if not roots:
+            return discovered
+        root = roots[0]
         if not root.is_dir():
             return discovered
 
@@ -214,7 +388,7 @@ def _discover_agent_files(agent: str, project_path: str = "") -> list[SessionFil
             discovered.append(SessionFile(agent="claude", path=jsonl))
         return discovered
 
-    for base in _candidate_roots(agent):
+    for base in _candidate_roots(agent, remote_host=remote_host):
         if not base.exists():
             continue
         if base.is_file() and base.suffix == ".jsonl":
@@ -223,8 +397,51 @@ def _discover_agent_files(agent: str, project_path: str = "") -> list[SessionFil
         if base.is_dir():
             for jsonl in base.rglob("*.jsonl"):
                 discovered.append(SessionFile(agent=agent, path=jsonl))
+            if agent == "gemini":
+                for json_file in base.rglob("*.json"):
+                    if "session-" in json_file.name:
+                        discovered.append(SessionFile(agent=agent, path=json_file))
 
     return discovered
+
+
+def parse_gemini_chat_json(path: Path) -> list[dict[str, Any]]:
+    """Parse Gemini chat JSON from ~/.gemini/tmp/ai-cli/chats/."""
+    messages: list[dict[str, Any]] = []
+    try:
+        with path.open(encoding="utf-8", errors="replace") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return []
+
+    # Format from ~/.gemini/tmp/ai-cli/chats/session-*.json
+    # { "messages": [ { "type": "user"|"gemini", "content": string|list, "displayContent": list, "timestamp": string } ] }
+    raw_messages = data.get("messages", [])
+    if not isinstance(raw_messages, list):
+        return []
+
+    for idx, msg in enumerate(raw_messages):
+        role_raw = str(msg.get("type", "")).lower()
+        role = "user" if role_raw == "user" else "assistant"
+        ts = _normalize_timestamp(msg.get("timestamp"))
+        
+        # Prefer displayContent for user messages to show the original command.
+        content_parts = _extract_text(msg.get("displayContent") or msg.get("content"))
+        text = "\n".join(content_parts).strip()
+        if not text:
+            continue
+
+        messages.append({
+            "agent": "gemini",
+            "role": role,
+            "type": "text",
+            "content": text,
+            "line": idx,
+            "timestamp": ts,
+            "file": str(path),
+        })
+
+    return messages
 
 
 def infer_agent_from_path(path: Path) -> str:
@@ -241,7 +458,11 @@ def infer_agent_from_path(path: Path) -> str:
     return "claude"
 
 
-def discover_sessions(target: str = "", agent: str = "all") -> list[SessionFile]:
+def discover_sessions(
+    target: str = "",
+    agent: str = "all",
+    remote_host: str = "",
+) -> list[SessionFile]:
     """Discover session files based on optional target path and agent filter."""
     target = target.strip()
     if target:
@@ -259,7 +480,13 @@ def discover_sessions(target: str = "", agent: str = "all") -> list[SessionFile]
     agents = AGENTS if agent == "all" else (agent,)
     files: list[SessionFile] = []
     for name in agents:
-        files.extend(_discover_agent_files(name, project_path=target))
+        files.extend(
+            _discover_agent_files(
+                name,
+                project_path=target,
+                remote_host=remote_host,
+            )
+        )
 
     seen: set[str] = set()
     deduped: list[SessionFile] = []
@@ -284,22 +511,36 @@ def _normalize_cwd(value: str) -> str:
     if not text:
         return ""
     try:
-        return str(Path(text).expanduser().resolve())
+        path = Path(text).expanduser()
+        if path.exists():
+            return str(path.resolve())
+        return str(path)
     except OSError:
         return text
 
 
-def infer_session_cwd(path: Path, max_lines: int = 80) -> str:
+def infer_session_cwd(path: Path, max_lines: int = 150) -> str:
     """Extract a declared working directory from a session file, if present."""
     try:
         with path.open(encoding="utf-8", errors="replace") as handle:
+            text_block = ""
             for idx, raw in enumerate(handle):
                 if idx >= max_lines:
                     break
+                text_block += raw
                 for pattern in _CWD_PATTERNS:
                     match = pattern.search(raw)
                     if match:
-                        return _normalize_cwd(_decode_json_string(match.group(1)))
+                        val = match.group(1)
+                        if val.startswith("/") or "~" in val:
+                             return _normalize_cwd(_decode_json_string(val))
+            
+            # Deeper scan if line-by-line failed
+            for pattern in _CWD_PATTERNS:
+                match = pattern.search(text_block)
+                if match:
+                    val = match.group(1)
+                    return _normalize_cwd(_decode_json_string(val))
     except OSError:
         return ""
     return ""
@@ -317,15 +558,22 @@ def _cwd_matches(session_cwd: str, working_cwd: str) -> bool:
     return session_norm.startswith(working_norm + "/")
 
 
-def sessions_for_working_dir(working_cwd: str, max_files: int = 20) -> list[SessionFile]:
+def sessions_for_working_dir(
+    working_cwd: str,
+    max_files: int = 20,
+    remote_host: str = "",
+) -> list[SessionFile]:
     """Return recent session files whose recorded cwd matches *working_cwd*."""
     working_norm = _normalize_cwd(working_cwd)
     if not working_norm:
         return []
 
     slug = _project_slug(working_norm)
+    # Gemini uses a SHA256 of the project root as projectHash
+    gemini_hash = hashlib.sha256(working_norm.encode("utf-8")).hexdigest()
+
     matched: list[SessionFile] = []
-    for session in discover_sessions(agent="all"):
+    for session in discover_sessions(agent="all", remote_host=remote_host):
         if len(matched) >= max_files:
             break
 
@@ -333,6 +581,18 @@ def sessions_for_working_dir(working_cwd: str, max_files: int = 20) -> list[Sess
         if session.agent == "claude" and slug in str(session.path.parent):
             matched.append(session)
             continue
+        
+        # Gemini JSON sessions check projectHash
+        if session.agent == "gemini" and session.path.suffix == ".json":
+            try:
+                # Fast check for the hash in the first 500 characters
+                with session.path.open(encoding="utf-8", errors="replace") as f:
+                    head = f.read(500)
+                    if gemini_hash in head:
+                        matched.append(session)
+                        continue
+            except OSError:
+                pass
 
         session_cwd = infer_session_cwd(session.path)
         if _cwd_matches(session_cwd, working_norm):
@@ -370,12 +630,13 @@ def build_recent_context_for_cwd(
     working_cwd: str,
     max_messages: int = 8,
     max_sessions: int = 6,
+    remote_host: str = "",
 ) -> str:
     """Build an agent-agnostic recent context block for prompt injection."""
 
     # ── Session store summaries (SQL) ────────────────────────────────
     store_summaries: list[str] = []
-    db_path = find_session_store_db()
+    db_path = find_session_store_db() if not remote_host.strip() else None
     if db_path:
         try:
             store_sessions = list_store_sessions(
@@ -391,7 +652,11 @@ def build_recent_context_for_cwd(
             pass
 
     # ── Legacy JSONL parsing ─────────────────────────────────────────
-    sessions = sessions_for_working_dir(working_cwd, max_files=max_sessions * 3)
+    sessions = sessions_for_working_dir(
+        working_cwd,
+        max_files=max_sessions * 3,
+        remote_host=remote_host,
+    )
 
     merged: list[dict[str, Any]] = []
     if sessions:
@@ -410,6 +675,21 @@ def build_recent_context_for_cwd(
                 enriched = dict(msg)
                 enriched["_session_mtime"] = session.mtime
                 merged.append(enriched)
+
+    # ── Traffic log (Gemini) extraction ──────────────────────────────
+    if not remote_host.strip() and TRAFFIC_DB_PATH.is_file():
+        try:
+            traffic_turns = query_traffic_turns(TRAFFIC_DB_PATH, agent="gemini", limit=max_messages * 2)
+            # Since traffic log doesn't store CWD per row, we take recent ones.
+            # We filter for candidates.
+            for turn in traffic_turns:
+                if not _is_context_candidate(turn.get("content", "")):
+                    continue
+                # Add a dummy mtime for sorting if missing.
+                turn["_session_mtime"] = _timestamp_for_sorting(turn.get("timestamp", ""))
+                merged.append(turn)
+        except Exception:
+            pass
 
     if not merged and not store_summaries:
         return ""
@@ -725,6 +1005,8 @@ def parse_generic_jsonl(
 def parse_session_file(session: SessionFile, show_tools: bool = False) -> list[dict[str, Any]]:
     if session.agent == "claude":
         return parse_claude_jsonl(session.path, show_tools=show_tools)
+    if session.agent == "gemini" and session.path.suffix == ".json":
+        return parse_gemini_chat_json(session.path)
     return parse_generic_jsonl(session.path, session.agent, show_tools=show_tools)
 
 
@@ -985,20 +1267,36 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     # ── Legacy mode (JSONL file discovery) ────────────────────────────
     sessions = discover_sessions(target=args.target, agent=args.agent)
-    if not sessions:
+    
+    if not sessions and args.agent not in ("all", "gemini"):
         print("No sessions found for the given filters.", file=sys.stderr)
         return 1
 
     if args.list:
+        if not sessions:
+            # Check if we have traffic log entries to justify a "Gemini" presence
+            traffic_turns = query_traffic_turns(TRAFFIC_DB_PATH, agent="gemini", limit=1)
+            if traffic_turns:
+                print(f"{'Agent':<8} {'Modified':<19} {'Size':>10}  File")
+                print("-" * 90)
+                print(f"{'gemini':<8} {'(from traffic)':<19} {'-':>10}  {TRAFFIC_DB_PATH}")
+                return 0
+            print("No sessions found for the given filters.", file=sys.stderr)
+            return 1
         return _list_sessions(sessions)
 
-    chosen = sessions if args.all else [max(sessions, key=lambda s: s.mtime)]
+    chosen = sessions if args.all else ([max(sessions, key=lambda s: s.mtime)] if sessions else [])
 
     parsed_messages: list[dict[str, Any]] = []
     for session in chosen:
         parsed_messages.extend(parse_session_file(session, show_tools=args.tools))
 
-    if args.all:
+    # ── Gemini traffic log integration ──────────────────────────────
+    if args.agent in ("all", "gemini"):
+        traffic_messages = query_traffic_turns(TRAFFIC_DB_PATH, agent="gemini", limit=args.tail or 50)
+        parsed_messages.extend(traffic_messages)
+
+    if args.all or args.agent in ("all", "gemini"):
         parsed_messages.sort(
             key=lambda m: (
                 _timestamp_for_sorting(str(m.get("timestamp", ""))),
@@ -1020,8 +1318,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         print("No messages found matching your criteria.", file=sys.stderr)
         return 0
 
-    latest = max(chosen, key=lambda s: s.mtime)
-    print(f"Session file: {latest.path}", file=sys.stderr)
+    if chosen:
+        latest = max(chosen, key=lambda s: s.mtime)
+        print(f"Session file: {latest.path}", file=sys.stderr)
+    elif args.agent in ("all", "gemini"):
+        print(f"Session source: {TRAFFIC_DB_PATH} (Gemini traffic)", file=sys.stderr)
+
     print(
         f"Showing {len(parsed_messages)} message(s) from {len(chosen)} session file(s).",
         file=sys.stderr,

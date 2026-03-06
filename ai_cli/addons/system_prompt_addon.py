@@ -34,6 +34,8 @@ _PROVIDER_PATHS: dict[str, str] = {
     "/chat/completions": "copilot",
     "/v1beta/models": "google",
     "/v1alpha/models": "google",
+    "/v1/models": "google",
+    "/v1internal:": "google",
 }
 
 _GEMINI_MODEL_RE = re.compile(r"/models/([^/:]+)")
@@ -145,19 +147,18 @@ def _extract_system_prompts(provider: str, body: dict, path: str) -> list[tuple[
                 results.append((model, "system", prompt))
 
     elif provider == "google":
-        # Gemini: body["systemInstruction"]["parts"][*]["text"], model from URL
+        # Gemini: support both public API and internal cloudcode request shapes.
         model = body.get("model", "") or _extract_model_from_url(path)
-        si = body.get("systemInstruction")
-        if isinstance(si, dict):
-            parts_list = si.get("parts")
-            if isinstance(parts_list, list):
-                parts_g: list[str] = []
-                for p in parts_list:
-                    if isinstance(p, dict):
-                        parts_g.append(p.get("text", ""))
-                prompt = "\n".join(pt for pt in parts_g if pt).strip()
-                if prompt:
-                    results.append((model, "system", prompt))
+        request_obj = body.get("request")
+        if isinstance(request_obj, dict):
+            model = model or str(request_obj.get("model", "") or "")
+        for container in (body, request_obj):
+            if not isinstance(container, dict):
+                continue
+            for key in ("systemInstruction", "system_instruction"):
+                text = _text_from_value(container.get(key))
+                if text:
+                    results.append((model, "system", text))
 
     return results
 
