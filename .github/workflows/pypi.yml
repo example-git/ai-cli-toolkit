@@ -3,10 +3,7 @@ name: Publish to PyPI
 on:
   release:
     types: [published]
-  # Alternatively, you can trigger on pushes to the main branch with tags:
-  # push:
-  #   tags:
-  #     - 'v*'
+  workflow_call: 
 
 jobs:
   build-and-publish:
