@@ -60,7 +60,7 @@ Use this project at your own risk. You are responsible for how you use it, inclu
   - Cross-platform: arm64 macOS + x86_64 Linux binaries
 ## Requirements
 
-- Python `>=3.8`
+- Python `>=3.12`
 - `mitmproxy` (auto-installed on first run if missing)
 - Wrapped tool binaries installed (`claude`, `codex`, `copilot`, `gemini`)
 
