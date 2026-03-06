@@ -370,6 +370,34 @@ def parse_wrapper_overrides(args: list[str]) -> tuple[list[str], dict[str, Any]]
         action="store_true",
         default=False,
     )
+    parser.add_argument(
+        "--app",
+        dest="use_app_binary",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--ai-cli-remote-rsync",
+        dest="remote_rsync",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--ai-cli-remote-init",
+        dest="remote_init",
+        default=None,
+    )
+    parser.add_argument(
+        "--ai-cli-remote-session-name",
+        dest="remote_session_name",
+        default=None,
+    )
+    parser.add_argument(
+        "--ai-cli-remote-no-package",
+        dest="remote_no_package",
+        action="store_true",
+        default=False,
+    )
     known, remaining = parser.parse_known_args(args)
     return remaining, {
         "instructions_file": known.instructions_file,
@@ -381,20 +409,42 @@ def parse_wrapper_overrides(args: list[str]) -> tuple[list[str], dict[str, Any]]
         "developer_instructions_mode": known.developer_instructions_mode,
         "rewrite_test_tag": known.rewrite_test_tag,
         "no_startup_context": known.no_startup_context,
+        "use_app_binary": known.use_app_binary,
+        "remote_rsync": known.remote_rsync,
+        "remote_init": known.remote_init,
+        "remote_session_name": known.remote_session_name,
+        "remote_no_package": known.remote_no_package,
     }
 
 
-def extract_launch_cwd(args: list[str]) -> tuple[Path | None, list[str]]:
+def extract_launch_cwd(
+    args: list[str],
+) -> tuple[Path | None, list[str], "RemoteSpec | None"]:
+    """Extract the directory (or remote spec) from the head of *args*.
+
+    Returns ``(local_path, remaining_args, remote_spec)``.  When the first arg
+    matches ``user@host:/path``, *remote_spec* is populated and *local_path* is
+    ``None`` (the caller is responsible for syncing down and setting up the
+    local mirror).
+    """
+    from ai_cli.remote import RemoteSpec, parse_remote_spec
+
     if not args:
-        return None, args
+        return None, args, None
     first = args[0]
     if not first or first.startswith("-"):
-        return None, args
+        return None, args, None
+
+    # Check for remote spec (user@host:/path) before local path
+    remote = parse_remote_spec(first)
+    if remote is not None:
+        return None, args[1:], remote
+
     candidate = Path(first).expanduser()
     if not candidate.is_dir():
-        return None, args
+        return None, args, None
     resolved = candidate.resolve()
-    return resolved, args[1:]
+    return resolved, args[1:], None
 
 
 def find_ai_mux() -> str | None:

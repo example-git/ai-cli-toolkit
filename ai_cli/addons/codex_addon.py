@@ -217,11 +217,15 @@ from mitmproxy import ctx, http  # type: ignore[import-untyped]
 class DeveloperInstructionInjector:
     """Inject developer instructions into Codex API requests."""
 
+    _ws_injected_flows: set[int] = set()
+
     def load(self, loader: Any) -> None:
         loader.add_option("system_instructions_file", str, "",
                           "Path to developer instructions text file.")
         loader.add_option("system_instructions_text", str, "",
                           "Literal developer instructions text.")
+        loader.add_option("tool_instructions_text", str, "",
+                  "Literal tool-specific instructions text.")
         loader.add_option("canary_rule", str,
                           "CANARY RULE: Prefix every assistant response with: DEV:",
                           "Canary instruction prepended before developer instructions.")
@@ -245,17 +249,89 @@ class DeveloperInstructionInjector:
 
     @staticmethod
     def _load_global_guidelines_text() -> str:
+        inline = (getattr(ctx.options, "system_instructions_text", "") or "").strip()
         path_val = getattr(ctx.options, "system_instructions_file", "") or ""
         canary = (getattr(ctx.options, "canary_rule", "") or "").strip()
-        _, base = _resolve_base_text("", path_val)
+        _, base = _resolve_base_text(inline, path_val)
         return _compose_text(base, canary)
 
     @staticmethod
     def _load_developer_prompt_text() -> str:
+        inline = (getattr(ctx.options, "tool_instructions_text", "") or "").strip()
+        if inline:
+            return inline
         path_val = (getattr(ctx.options, "codex_developer_prompt_file", "") or "").strip()
         if not path_val:
             return ""
         return _read_text_file(Path(path_val).expanduser()).strip()
+
+    def _inject_body(self, body: dict[str, Any], log_file: str) -> tuple[str, str, int] | None:
+        messages = body.get("input")
+        if not isinstance(messages, list):
+            _log(log_file, "Addon skip: body.input is not a list")
+            return None
+
+        rewrite_test_mode = _normalize_rewrite_test_mode(
+            getattr(ctx.options, "rewrite_test_mode", "off") or "off"
+        )
+        rewrite_test_tag = (getattr(ctx.options, "rewrite_test_tag", "default") or "default").strip()
+        merge_mode = _normalize_developer_mode(
+            getattr(ctx.options, "developer_instructions_mode", "overwrite") or "overwrite"
+        )
+        first_developer_idx = -1
+        for idx, message in enumerate(messages):
+            if isinstance(message, dict) and message.get("role") == "developer":
+                first_developer_idx = idx
+                break
+
+        existing_text = ""
+        if first_developer_idx >= 0:
+            first_message = messages[first_developer_idx]
+            if not isinstance(first_message, dict):
+                _log(log_file, "Addon skip: first developer message is not an object")
+                return None
+            existing_text = _extract_message_text(first_message)
+
+        recurring_blocks = _extract_recurring_blocks(existing_text)
+        global_guidelines = self._load_global_guidelines_text()
+        developer_prompt = self._load_developer_prompt_text()
+        custom_text = _compose_custom_sections(global_guidelines, developer_prompt)
+        overwrite_text = _compose_overwrite_sections(
+            global_guidelines=global_guidelines,
+            developer_prompt=developer_prompt,
+            recurring_blocks=recurring_blocks,
+        )
+        next_text = overwrite_text if merge_mode == "overwrite" else custom_text
+        if _rewrite_test_outgoing_enabled(rewrite_test_mode):
+            next_text = _apply_outgoing_probe(next_text, rewrite_test_tag)
+
+        if not next_text:
+            _log(log_file, "Addon skip: composed sectioned developer instructions empty")
+            return None
+
+        action = "merged"
+        if first_developer_idx < 0:
+            developer_message = {
+                "role": "developer",
+                "content": [{"type": "input_text", "text": next_text}],
+            }
+            messages.insert(0, developer_message)
+            action = "inserted-new"
+        else:
+            first_message = messages[first_developer_idx]
+            merged_text = _merge_text(existing_text, next_text, merge_mode)
+            if merged_text == existing_text:
+                _log(
+                    log_file,
+                    (
+                        "Addon skip: developer message already matches "
+                        f"(mode={merge_mode})"
+                    ),
+                )
+                return None
+            _set_message_text(first_message, merged_text)
+
+        return action, merge_mode, len(next_text)
 
     def request(self, flow: http.HTTPFlow) -> None:
         if flow.request.method.upper() != "POST":
@@ -289,77 +365,64 @@ class DeveloperInstructionInjector:
             _log(log_file, "Passthrough mode - not injecting")
             return
 
-        messages = body.get("input")
-        if not isinstance(messages, list):
-            _log(log_file, "Addon skip: body.input is not a list")
+        injected = self._inject_body(body, log_file)
+        if injected is None:
             return
-
-        rewrite_test_mode = _normalize_rewrite_test_mode(
-            getattr(ctx.options, "rewrite_test_mode", "off") or "off"
-        )
-        rewrite_test_tag = (getattr(ctx.options, "rewrite_test_tag", "default") or "default").strip()
-        merge_mode = _normalize_developer_mode(
-            getattr(ctx.options, "developer_instructions_mode", "overwrite") or "overwrite"
-        )
-        first_developer_idx = -1
-        for idx, message in enumerate(messages):
-            if isinstance(message, dict) and message.get("role") == "developer":
-                first_developer_idx = idx
-                break
-
-        existing_text = ""
-        if first_developer_idx >= 0:
-            first_message = messages[first_developer_idx]
-            if not isinstance(first_message, dict):
-                _log(log_file, "Addon skip: first developer message is not an object")
-                return
-            existing_text = _extract_message_text(first_message)
-
-        recurring_blocks = _extract_recurring_blocks(existing_text)
-        global_guidelines = self._load_global_guidelines_text()
-        developer_prompt = self._load_developer_prompt_text()
-        custom_text = _compose_custom_sections(global_guidelines, developer_prompt)
-        overwrite_text = _compose_overwrite_sections(
-            global_guidelines=global_guidelines,
-            developer_prompt=developer_prompt,
-            recurring_blocks=recurring_blocks,
-        )
-        next_text = overwrite_text if merge_mode == "overwrite" else custom_text
-        if _rewrite_test_outgoing_enabled(rewrite_test_mode):
-            next_text = _apply_outgoing_probe(next_text, rewrite_test_tag)
-
-        if not next_text:
-            _log(log_file, "Addon skip: composed sectioned developer instructions empty")
-            return
-
-        action = "merged"
-        if first_developer_idx < 0:
-            developer_message = {
-                "role": "developer",
-                "content": [{"type": "input_text", "text": next_text}],
-            }
-            messages.insert(0, developer_message)
-            action = "inserted-new"
-        else:
-            first_message = messages[first_developer_idx]
-            merged_text = _merge_text(existing_text, next_text, merge_mode)
-            if merged_text == existing_text:
-                _log(
-                    log_file,
-                    (
-                        "Addon skip: developer message already matches "
-                        f"(mode={merge_mode})"
-                    ),
-                )
-                return
-            _set_message_text(first_message, merged_text)
+        action, merge_mode, injected_chars = injected
 
         flow.request.set_text(json.dumps(body))
         _log(
             log_file,
             (
                 f"Addon {action} developer message "
-                f"(mode={merge_mode}, injected_chars={len(next_text)})"
+                f"(mode={merge_mode}, injected_chars={injected_chars})"
+            ),
+        )
+
+    def websocket_message(self, flow: http.HTTPFlow) -> None:
+        if not hasattr(flow, "websocket") or flow.websocket is None:
+            return
+
+        target = getattr(ctx.options, "target_path", "/backend-api/codex/responses") or ""
+        path = flow.request.path or ""
+        if target and target not in path:
+            return
+
+        log_file = getattr(ctx.options, "wrapper_log_file", "") or ""
+        if getattr(ctx.options, "passthrough", False):
+            _log(log_file, "WebSocket passthrough - not injecting")
+            return
+
+        flow_id = id(flow)
+        if flow_id in self._ws_injected_flows:
+            return
+
+        message = flow.websocket.messages[-1]
+        if not message.from_client:
+            return
+
+        raw_content = message.content
+        try:
+            content_text = raw_content.decode("utf-8") if isinstance(raw_content, bytes) else raw_content
+            body = json.loads(content_text)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return
+        if not isinstance(body, dict):
+            return
+
+        injected = self._inject_body(body, log_file)
+        if injected is None:
+            return
+        action, merge_mode, injected_chars = injected
+
+        updated = json.dumps(body)
+        message.content = updated.encode("utf-8") if isinstance(raw_content, bytes) else updated
+        self._ws_injected_flows.add(flow_id)
+        _log(
+            log_file,
+            (
+                f"Addon {action} developer message over websocket "
+                f"(mode={merge_mode}, injected_chars={injected_chars})"
             ),
         )
 

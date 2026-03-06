@@ -17,22 +17,11 @@ It runs each tool through a managed mitmproxy layer to inject instructions consi
 
 ---
 
-This is an early `0.1.0` release. Features are still evolving, behavior may change, and some workflows may be incomplete or unstable.
+This is an early `0.2.0` release. Features are still evolving, behavior may change, and some workflows may be incomplete or unstable.
 
 Use this project at your own risk. You are responsible for how you use it, including compliance with platform policies, terms of service, and applicable laws. The maintainers are not liable for misuse, data loss, account issues, service interruptions, or other consequences resulting from use of this tool.
 
 ---
-
-## Current Status
-
-Implemented and smoke-tested:
-
-- Multi-tool dispatch and alias-style argv routing
-- Per-tool instruction injection addons
-- Dynamic per-session proxy ports
-- Session extraction across multiple agents
-- Startup recent-context injection (cwd-scoped, cross-agent)
-- Interactive menu, update command, completions, installer, statusline
 
 ## Key Features
 
@@ -55,6 +44,20 @@ Implemented and smoke-tested:
   - `ai-cli update --list`
   - `ai-cli update codex`
   - `ai-cli update --all`
+- Remote session support:
+  - Launch tools on remote hosts: `ai-cli codex user@host:/path/to/project`
+  - Packages and deploys ai-mux, prompt layers, and editor launcher to the remote
+  - Syncs edited prompt files back on session exit
+- In-session prompt editor (F5–F8):
+  - F5: global instructions (`system_instructions.txt`)
+  - F6: base instructions (`base_instructions.txt`)
+  - F7: per-tool instructions (`instructions/<tool>.txt`)
+  - F8: per-project instructions (`.ai-cli/project_instructions.txt`)
+  - Status bar shows shortcut hints; prefix with `C-]` to trigger
+- ai-mux tmux orchestrator:
+  - Per-tool tmux sockets (`--socket-name`)
+  - Auto-detach stale clients on reconnect (scoped per-session)
+  - Cross-platform: arm64 macOS + x86_64 Linux binaries
 ## Requirements
 
 - Python `>=3.8`
@@ -89,6 +92,7 @@ python3 -m pip install --user -e .
 
 ```bash
 ai-cli <tool> [DIR] [args...]
+ai-cli <tool> user@host:/remote/dir [args...]   # remote session
 ai-cli menu
 ai-cli status
 ai-cli system [tool]
@@ -105,9 +109,11 @@ ai-cli completions generate [--shell bash|zsh|all]
 Directory launch behavior:
 
 - If the first argument after `<tool>` is an existing directory, ai-cli launches the wrapped tool in that directory.
+- If the argument is `user@host:/path`, ai-cli packages and deploys a remote session via SSH/rsync.
 - This applies to both:
   - `ai-cli claude /path/to/project`
   - `claude /path/to/project` (when `claude` is aliased to ai-cli wrapper)
+  - `ai-cli codex user@server:/home/user/project`
 
 `ai-cli menu` uses curses in an interactive TTY and falls back to a non-interactive status output otherwise.
 
@@ -156,8 +162,11 @@ Codex prompt handling (`developer_instructions_mode=overwrite`) builds a section
 - recurring runtime blocks (permissions/apps/collaboration mode) preserved in tagged recurring sections
 
 In `ai-mux` sessions:
-- `F7` opens the global prompt file in your editor (`VISUAL`/`EDITOR`, fallback `nano`/`vi`/`vim`)
-- `F8` opens the active tool's prompt file
+- `F5` opens the global prompt file in your editor (`VISUAL`/`EDITOR`, fallback `nano`/`vi`/`vim`)
+- `F6` opens the base instructions file
+- `F7` opens the active tool's prompt file
+- `F8` opens the project-level prompt file
+- All F-key bindings require `C-]` prefix (shown in status bar)
 - Codex injections read these files per request, so file edits apply to subsequent turns in the same conversation
 
 ## Instruction Files
@@ -286,6 +295,11 @@ Additional user docs live under `docs/`:
 - `ai_cli/` core package
 - `ai_cli/tools/` tool specs and registry
 - `ai_cli/addons/` mitmproxy injection addons
+- `ai_cli/bin/` compiled ai-mux binaries (arm64 macOS, x86_64 Linux)
+- `ai_cli/remote.py` remote session spec and SSH runner
+- `ai_cli/remote_package.py` remote package builder, tmux conf, prompt sync
+- `ai_cli/prompt_editor_launcher.py` F5–F8 prompt editor (deployed to remote)
+- `mux/` Rust source for ai-mux tmux orchestrator
 - `templates/` base instruction template
 - `completions/` shell completion scripts
 - `statusline/` statusline command script

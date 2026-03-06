@@ -1,0 +1,153 @@
+#!/usr/bin/env zsh
+set -euo pipefail
+
+die() { print -u2 -- "Error: $*"; exit 1; }
+
+usage() {
+  cat <<'USAGE'
+remote-tty-wrapper -H user@host [-s session] [--ssh-opt "..."] <mode> [mode args]
+
+Global:
+  -H, --host user@host        required
+  -s, --session NAME          tmux session name (default: sshwrap)
+  --ssh-opt "..."             extra ssh option (repeatable)
+
+Modes:
+  start [--init 'CMD']        ensure tmux session exists; optionally run CMD inside it
+  shell [--init 'CMD']        attach to tmux session; optionally run CMD inside it first
+  send  CMD...                send one command line into the tmux session
+  send  -- 'CMD1' -- 'CMD2'   send multiple command lines (separator is literal --)
+  close                       kill the tmux session
+
+Examples:
+  remote-tty-wrapper -H example@192.168.1.117 start
+  remote-tty-wrapper -H example@192.168.1.117 shell
+  remote-tty-wrapper -H example@192.168.1.117 shell --init 'source ~/miniconda3/bin/activate; conda activate bot-refactor/conda'
+  remote-tty-wrapper -H example@192.168.1.117 send 'cd bot-refactor'
+  remote-tty-wrapper -H example@192.168.1.117 send -- 'cd bot-refactor' -- 'pwd' -- 'python -V'
+USAGE
+}
+
+REMOTE_USER_HOST="${REMOTE_USER_HOST:-}"
+SESSION="sshwrap"
+MODE=""
+INIT_CMD=""
+
+typeset -a SSH_OPTS
+SSH_OPTS=(-o PermitLocalCommand=no -o ServerAliveInterval=30 -o ServerAliveCountMax=3)
+
+# ---- parse globals ----
+while (( $# )); do
+  case "$1" in
+    -H|--host) shift; (( $# )) || die "Missing --host"; REMOTE_USER_HOST="$1"; shift;;
+    -s|--session) shift; (( $# )) || die "Missing --session"; SESSION="$1"; shift;;
+    --ssh-opt) shift; (( $# )) || die "Missing --ssh-opt"; SSH_OPTS+=("$1"); shift;;
+    -h|--help) usage; exit 0;;
+    start|shell|send|close) MODE="$1"; shift; break;;
+    *) die "Unknown option or missing mode: $1 (use --help)";;
+  esac
+done
+
+[[ -n "$REMOTE_USER_HOST" ]] || die "No host set (-H user@host)"
+[[ -n "$MODE" ]] || die "No mode (use --help)"
+
+# ---- helper: run a shell snippet on remote with argv preserved ----
+ssh_sh() {
+  ssh "${SSH_OPTS[@]}" "$REMOTE_USER_HOST" sh -s -- "$@"
+}
+
+ensure_tmux_session() {
+  ssh_sh "$SESSION" <<'SH'
+sess="$1"
+command -v tmux >/dev/null 2>&1 || { echo "tmux not found on remote" >&2; exit 127; }
+tmux has-session -t "$sess" 2>/dev/null || tmux new-session -d -s "$sess"
+SH
+}
+
+tmux_send_line() {
+  ssh_sh "$SESSION" "$1" <<'SH'
+sess="$1"
+line="$2"
+tmux has-session -t "$sess" 2>/dev/null || tmux new-session -d -s "$sess"
+tmux send-keys -t "$sess" -l -- "$line"
+tmux send-keys -t "$sess" Enter
+SH
+}
+typeset -a REMAINING_ARGS
+parse_init() {
+  INIT_CMD=""
+  REMAINING_ARGS=()
+  if (( $# >= 2 )) && [[ "$1" == "--init" ]]; then
+    INIT_CMD="$2"
+    shift 2
+  fi
+  REMAINING_ARGS=("$@")
+}
+
+do_start() {
+  parse_init "$@"
+  (( ${#REMAINING_ARGS[@]} == 0 )) || die "start takes no extra args (use --init '...')"
+
+  ensure_tmux_session
+  [[ -n "$INIT_CMD" ]] && tmux_send_line "$INIT_CMD"
+}
+
+do_shell() {
+  parse_init "$@"
+  (( ${#REMAINING_ARGS[@]} == 0 )) || die "shell takes no extra args (use --init '...')"
+
+  [[ -r /dev/tty && -w /dev/tty ]] || die "shell requires a real terminal (/dev/tty unavailable). Use start/send."
+
+  local remote_cmd
+  remote_cmd="tmux has-session -t $(printf %q "$SESSION") 2>/dev/null || tmux new-session -d -s $(printf %q "$SESSION")"
+  if [[ -n "$INIT_CMD" ]]; then
+    remote_cmd="$remote_cmd; tmux send-keys -t $(printf %q "$SESSION") -l -- $(printf %q "$INIT_CMD"); tmux send-keys -t $(printf %q "$SESSION") Enter"
+  fi
+  remote_cmd="$remote_cmd; tmux attach -t $(printf %q "$SESSION")"
+
+  exec </dev/tty >/dev/tty 2>&1 \
+    ssh "${SSH_OPTS[@]}" -o RequestTTY=force "$REMOTE_USER_HOST" "$remote_cmd"
+}
+
+do_send() {
+  ensure_tmux_session
+  (( $# > 0 )) || die "send requires a command (or: send -- 'CMD1' -- 'CMD2' ...)"
+
+  if [[ "$1" == "--" ]]; then
+    shift
+    local cur=""
+    while (( $# )); do
+      if [[ "$1" == "--" ]]; then
+        [[ -n "$cur" ]] && tmux_send_line "$cur"
+        cur=""
+        shift
+        continue
+      fi
+      if [[ -z "$cur" ]]; then
+        cur="$1"
+      else
+        cur="$cur $1"
+      fi
+      shift
+    done
+    [[ -n "$cur" ]] && tmux_send_line "$cur"
+  else
+    tmux_send_line "$*"
+  fi
+}
+
+do_close() {
+  (( $# == 0 )) || die "close takes no arguments"
+  ssh_sh "$SESSION" <<'SH'
+sess="$1"
+command -v tmux >/dev/null 2>&1 || exit 0
+tmux kill-session -t "$sess" 2>/dev/null || true
+SH
+}
+
+case "$MODE" in
+  start) do_start "$@";;
+  shell) do_shell "$@";;
+  send)  do_send  "$@";;
+  close) do_close "$@";;
+esac

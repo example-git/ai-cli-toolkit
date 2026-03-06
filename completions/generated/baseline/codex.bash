@@ -139,6 +139,9 @@ _codex() {
             codex__debug,app-server)
                 cmd="codex__debug__app__server"
                 ;;
+            codex__debug,clear-memories)
+                cmd="codex__debug__clear__memories"
+                ;;
             codex__debug,help)
                 cmd="codex__debug__help"
                 ;;
@@ -156,6 +159,9 @@ _codex() {
                 ;;
             codex__debug__help,app-server)
                 cmd="codex__debug__help__app__server"
+                ;;
+            codex__debug__help,clear-memories)
+                cmd="codex__debug__help__clear__memories"
                 ;;
             codex__debug__help,help)
                 cmd="codex__debug__help__help"
@@ -300,6 +306,9 @@ _codex() {
                 ;;
             codex__help__debug,app-server)
                 cmd="codex__help__debug__app__server"
+                ;;
+            codex__help__debug,clear-memories)
+                cmd="codex__help__debug__clear__memories"
                 ;;
             codex__help__debug__app__server,send-message-v2)
                 cmd="codex__help__debug__app__server__send__message__v2"
@@ -1110,7 +1119,7 @@ _codex() {
             return 0
             ;;
         codex__debug)
-            opts="-c -h --config --enable --disable --help app-server help"
+            opts="-c -h --config --enable --disable --help app-server clear-memories help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1241,8 +1250,38 @@ _codex() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        codex__debug__clear__memories)
+            opts="-c -h --config --enable --disable --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --config)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --enable)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --disable)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         codex__debug__help)
-            opts="app-server help"
+            opts="app-server clear-memories help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1272,6 +1311,20 @@ _codex() {
         codex__debug__help__app__server__send__message__v2)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 5 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        codex__debug__help__clear__memories)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
@@ -1593,7 +1646,7 @@ _codex() {
             return 0
             ;;
         codex__execpolicy__check)
-            opts="-r -c -h --rules --pretty --config --enable --disable --help <COMMAND>..."
+            opts="-r -c -h --rules --pretty --resolve-host-executables --config --enable --disable --help <COMMAND>..."
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2134,7 +2187,7 @@ _codex() {
             return 0
             ;;
         codex__help__debug)
-            opts="app-server"
+            opts="app-server clear-memories"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2164,6 +2217,20 @@ _codex() {
         codex__help__debug__app__server__send__message__v2)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 5 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        codex__help__debug__clear__memories)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi

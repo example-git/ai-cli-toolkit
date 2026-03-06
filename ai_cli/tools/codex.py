@@ -16,7 +16,9 @@ spec = ToolSpec(
     install_methods={
         "npm": "npm install -g @openai/codex",
         "brew": "brew install --cask codex",
+        "app": "Download from https://codex.openai.com or: brew install --cask codex",
     },
-    preferred_methods=["npm", "brew"],
+    preferred_methods=["npm", "brew", "app"],
     version_command=["codex", "--version"],
+    app_binary="/Applications/Codex.app/Contents/MacOS/Codex",
 )

@@ -29,10 +29,10 @@ _ai_cli_fill_tool_data() {
       dir_flags="--add-dir"
       ;;
     copilot)
-      native_flags="--acp --add-dir --add-github-mcp-tool --add-github-mcp-toolset --additional-mcp-config --agent --allow-all --allow-all-paths --allow-all-tools --allow-all-urls --allow-tool --allow-url --alt-screen --autopilot --available-tools --banner --bash-env --config-dir --continue --deny-tool --deny-url --disable-builtin-mcps --disable-mcp-server --disallow-temp-dir --enable-all-github-mcp-tools --excluded-tools --experimental --help --interactive --log-dir --log-level --max-autopilot-continues --model --mouse --no-alt-screen --no-ask-user --no-auto-update --no-bash-env --no-color --no-custom-instructions --no-experimental --no-mouse --plain-diff --prompt --resume --screen-reader --secret-env-vars --share --share-gist --silent --stream --version --yolo -h -i -p -s -v"
+      native_flags="--acp --add-dir --add-github-mcp-tool --add-github-mcp-toolset --additional-mcp-config --agent --allow-all --allow-all-paths --allow-all-tools --allow-all-urls --allow-tool --allow-url --alt-screen --autopilot --available-tools --banner --bash-env --config-dir --continue --deny-tool --deny-url --disable-builtin-mcps --disable-mcp-server --disallow-temp-dir --enable-all-github-mcp-tools --excluded-tools --experimental --help --interactive --log-dir --log-level --max-autopilot-continues --model --mouse --no-alt-screen --no-ask-user --no-auto-update --no-bash-env --no-color --no-custom-instructions --no-experimental --no-mouse --output-format --plain-diff --plugin-dir --prompt --resume --screen-reader --secret-env-vars --share --share-gist --silent --stream --version --yolo -h -i -p -s -v"
       native_subcommands="init plugin update version commands config environment logging permissions"
       file_flags="--additional-mcp-config"
-      dir_flags="--add-dir --config-dir --log-dir"
+      dir_flags="--add-dir --config-dir --log-dir --plugin-dir"
       ;;
     gemini)
       native_flags="--accept-raw-output-risk --allowed-mcp-server-names --allowed-tools --approval-mode --debug --delete-session --experimental-acp --extensions --help --include-directories --list-extensions --list-sessions --model --output-format --policy --prompt --prompt-interactive --raw-output --resume --sandbox --screen-reader --version --yolo -d -e -h -i -l -m -o -p -r -s -v -y"

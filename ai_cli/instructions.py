@@ -4,13 +4,16 @@ Injection hierarchy (composed at runtime):
 1. Canary rule       — e.g. "CANARY RULE: Prefix every assistant response with: DEV:"
 2. Base instructions — ~/.ai-cli/base_instructions.txt  (generic gates/rules)
 3. Per-tool          — ~/.ai-cli/instructions/<tool>.txt (optional)
-4. Project           — ./.ai-cli/project_instructions.txt (optional, per-cwd)
+4. Project           — ~/.ai-cli/project-prompts/<project>/instructions.txt
 5. User custom       — ~/.ai-cli/system_instructions.txt (free-form)
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -23,6 +26,9 @@ DEFAULT_CANARY_RULE = "CANARY RULE: Prefix every assistant response with: DEV:"
 DEFAULT_AI_CLI_DIR = "~/.ai-cli"
 DEFAULT_INSTRUCTIONS_FILE = "system_instructions.txt"
 BASE_INSTRUCTIONS_FILE = "base_instructions.txt"
+PROJECT_PROMPTS_DIR = "project-prompts"
+PROJECT_PROMPT_FILENAME = "instructions.txt"
+PROJECT_PROMPT_META_FILENAME = "meta.json"
 
 
 # ---------------------------------------------------------------------------
@@ -40,6 +46,63 @@ def _read_text(path: Path) -> str:
 def _ai_cli_dir() -> Path:
     """Return the resolved ~/.ai-cli directory."""
     return Path(DEFAULT_AI_CLI_DIR).expanduser()
+
+
+def _slugify(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", value.strip().lower()).strip("-")
+    return slug[:48] or "project"
+
+
+def _project_identity(project_cwd: str = "", remote_spec: str = "") -> tuple[str, str]:
+    if remote_spec.strip():
+        project_root = project_cwd.strip() or "."
+        identity = f"remote:{remote_spec.strip()}::{project_root}"
+        label = f"{remote_spec.strip().split(':', 1)[0]} {Path(project_root).name or 'project'}"
+        return identity, label
+
+    base = Path(project_cwd).expanduser() if project_cwd.strip() else Path.cwd()
+    resolved = str(base.resolve(strict=False))
+    return resolved, base.name or "project"
+
+
+def resolve_project_prompt_dir(project_cwd: str = "", remote_spec: str = "") -> Path:
+    identity, label = _project_identity(project_cwd=project_cwd, remote_spec=remote_spec)
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:12]
+    return _ai_cli_dir() / PROJECT_PROMPTS_DIR / f"{_slugify(label)}-{digest}"
+
+
+def resolve_project_prompt_path(project_cwd: str = "", remote_spec: str = "") -> Path:
+    return resolve_project_prompt_dir(
+        project_cwd=project_cwd,
+        remote_spec=remote_spec,
+    ) / PROJECT_PROMPT_FILENAME
+
+
+def _legacy_project_instructions_path(project_cwd: str = "") -> Path:
+    base = Path(project_cwd).expanduser() if project_cwd.strip() else Path.cwd()
+    return base / ".ai-cli" / "project_instructions.txt"
+
+
+def ensure_project_instructions_file(project_cwd: str = "", remote_spec: str = "") -> str:
+    path = resolve_project_prompt_path(project_cwd=project_cwd, remote_spec=remote_spec)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    legacy_path = _legacy_project_instructions_path(project_cwd=project_cwd)
+    if not path.exists():
+        if not remote_spec.strip() and legacy_path.is_file():
+            shutil.copy2(legacy_path, path)
+        else:
+            path.write_text("", encoding="utf-8")
+
+    meta_path = path.parent / PROJECT_PROMPT_META_FILENAME
+    identity, _label = _project_identity(project_cwd=project_cwd, remote_spec=remote_spec)
+    payload = {
+        "identity": identity,
+        "instructions_file": str(path),
+        "project_cwd": project_cwd.strip() or str(Path.cwd()),
+        "remote_spec": remote_spec.strip(),
+    }
+    meta_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return str(path)
 
 
 # ---------------------------------------------------------------------------
@@ -70,14 +133,9 @@ def resolve_tool_instructions(tool_name: str) -> str:
     return _read_text(path)
 
 
-def resolve_project_instructions(project_cwd: str = "") -> str:
-    """Load project-level instructions from .ai-cli/project_instructions.txt.
-
-    If *project_cwd* is provided, that directory is used as the project root.
-    Otherwise the current working directory is used.
-    """
-    base = Path(project_cwd).expanduser() if project_cwd.strip() else Path.cwd()
-    path = base / ".ai-cli" / "project_instructions.txt"
+def resolve_project_instructions(project_cwd: str = "", remote_spec: str = "") -> str:
+    """Load project-level instructions from ~/.ai-cli/project-prompts."""
+    path = resolve_project_prompt_path(project_cwd=project_cwd, remote_spec=remote_spec)
     return _read_text(path)
 
 
@@ -125,6 +183,7 @@ def compose_instructions(
     instructions_text: str = "",
     instructions_file: str = "",
     project_cwd: str = "",
+    remote_spec: str = "",
 ) -> str:
     """Compose the full instruction text from all 5 layers.
 
@@ -152,7 +211,10 @@ def compose_instructions(
             layers.append(tool_text)
 
     # Layer 4: Project instructions
-    project_text = resolve_project_instructions(project_cwd=project_cwd)
+    project_text = resolve_project_instructions(
+        project_cwd=project_cwd,
+        remote_spec=remote_spec,
+    )
     if project_text:
         layers.append(project_text)
 

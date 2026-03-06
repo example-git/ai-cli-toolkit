@@ -32,6 +32,7 @@ from ai_cli.config import (
 from ai_cli.housekeeping import prune_old_logs, prune_old_traffic_rows
 from ai_cli.instructions import (
     compose_instructions,
+    ensure_project_instructions_file,
     edit_instructions,
     resolve_instructions_file,
     resolve_user_instructions,
@@ -88,6 +89,15 @@ def _write_session_files(session_id: str, port: int) -> None:
 
 def _cleanup_session_files(session_id: str) -> None:
     _mh_cleanup_session_files(session_id)
+
+
+def _install_prompt_editor_launcher() -> str:
+    src = Path(__file__).resolve().parent / "prompt_editor_launcher.py"
+    dest = Path("~/.ai-cli/bin/ai-prompt-editor").expanduser()
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dest)
+    os.chmod(dest, 0o755)
+    return str(dest)
 
 
 def _spawn_detached_proxy_watcher(
@@ -158,7 +168,7 @@ def _parse_wrapper_overrides(args: list[str]) -> tuple[list[str], dict[str, Any]
     return _mh_parse_wrapper_overrides(args)
 
 
-def _extract_launch_cwd(args: list[str]) -> tuple[Path | None, list[str]]:
+def _extract_launch_cwd(args: list[str]) -> tuple[Path | None, list[str], "RemoteSpec | None"]:
     return _mh_extract_launch_cwd(args)
 
 
@@ -168,6 +178,13 @@ def _find_ai_mux() -> str | None:
 
 def _ai_mux_status() -> tuple[str, str | None]:
     return _mh_ai_mux_status()
+
+
+def _default_remote_session_name(tool_name: str, remote_spec: "RemoteSpec") -> str:
+    digest = hashlib.sha256(
+        f"{tool_name}:{remote_spec.display}".encode("utf-8")
+    ).hexdigest()[:12]
+    return f"ai-cli-{tool_name}-{digest}"
 
 
 def _resolve_tool_prompt_file(config: dict[str, Any], tool_name: str) -> str:
@@ -232,7 +249,7 @@ def _warn_proxy_disabled(log_path: Path, mitm_log_path: Path, reason: str) -> No
 def run_tool(tool_name: str, args: list[str]) -> int:
     """Run a managed AI CLI tool through the mitmproxy wrapper."""
     parsed_tool_args, wrapper_overrides = _parse_wrapper_overrides(args)
-    launch_cwd, parsed_tool_args = _extract_launch_cwd(parsed_tool_args)
+    launch_cwd, parsed_tool_args, remote_spec = _extract_launch_cwd(parsed_tool_args)
 
     registry = load_registry()
     spec = registry.get(tool_name)
@@ -252,12 +269,22 @@ def run_tool(tool_name: str, args: list[str]) -> int:
         return 1
 
     # Resolve binary
-    binary = spec.resolve_binary(tool_cfg["binary"])
-    if not spec.detect_installed(tool_cfg["binary"]):
-        print(f"Tool binary not found: {binary}", file=sys.stderr)
-        if spec.install_command:
-            print(f"Install with: {spec.install_command}", file=sys.stderr)
-        return 1
+    use_app = wrapper_overrides.get("use_app_binary", False)
+    if use_app:
+        if not spec.app_binary:
+            print(f"Tool '{tool_name}' has no macOS app binary configured.", file=sys.stderr)
+            return 1
+        if not Path(spec.app_binary).is_file():
+            print(f"macOS app binary not found: {spec.app_binary}", file=sys.stderr)
+            return 1
+        binary = spec.app_binary
+    else:
+        binary = spec.resolve_binary(tool_cfg["binary"])
+        if not spec.detect_installed(tool_cfg["binary"]):
+            print(f"Tool binary not found: {binary}", file=sys.stderr)
+            if spec.install_command:
+                print(f"Install with: {spec.install_command}", file=sys.stderr)
+            return 1
 
     # Codex-specific: check for network-proxy settings that could break our MITM
     if tool_name == "codex":
@@ -278,10 +305,55 @@ def run_tool(tool_name: str, args: list[str]) -> int:
         log_path=log_path,
     )
 
+    # ── Compute remote mode ──────────────────────────────────────────────
+    # Default for remote specs is session mode (tool runs on the remote).
+    # Use --ai-cli-remote-rsync / AI_CLI_REMOTE_RSYNC=1 to force old rsync mode.
+    _remote_rsync_flag = (
+        wrapper_overrides.get("remote_rsync", False)
+        or (
+            os.environ.get("AI_CLI_REMOTE_RSYNC", "").strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
+    )
+    _remote_session_flag = (
+        remote_spec is not None and not _remote_rsync_flag
+    )
+
+    # ── Remote folder proxy (rsync mode — only when explicitly requested) ─
+    if remote_spec is not None and _remote_rsync_flag:
+        from ai_cli.remote import (
+            make_local_mirror,
+            print_sync_status,
+            sync_down,
+            sync_up,
+            verify_ssh,
+        )
+
+        print_sync_status(f"Connecting to {remote_spec.display} …")
+        try:
+            verify_ssh(remote_spec)
+        except RuntimeError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+
+        local_mirror = make_local_mirror(remote_spec)
+        print_sync_status(f"Syncing down → {local_mirror}")
+        try:
+            sync_down(remote_spec, local_mirror)
+        except (RuntimeError, FileNotFoundError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+
+        launch_cwd = local_mirror
+        print_sync_status("Local mirror ready")
+
     effective_cwd = launch_cwd or Path.cwd()
+    context_cwd = remote_spec.path if remote_spec is not None else str(effective_cwd)
     append_log(
         log_path,
-        f"Wrapper start (ai-cli {__version__}, tool={tool_name}, cwd={effective_cwd})",
+        f"Wrapper start (ai-cli {__version__}, tool={tool_name}, cwd={effective_cwd}"
+        + (f", remote={remote_spec.display}" if remote_spec else "")
+        + ")",
     )
 
     # Build tool command early so we can rehook/replace before starting a proxy.
@@ -302,6 +374,7 @@ def run_tool(tool_name: str, args: list[str]) -> int:
         or wrapper_overrides["developer_instructions_mode"] is not None
         or bool((wrapper_overrides["rewrite_test_tag"] or "").strip())
         or bool(wrapper_overrides["no_startup_context"])
+        or bool(wrapper_overrides.get("use_app_binary"))
     )
     tool_flag_used = any(arg.startswith("-") for arg in tool_args)
     replace_existing = wrapper_flag_used or tool_flag_used
@@ -358,7 +431,10 @@ def run_tool(tool_name: str, args: list[str]) -> int:
     )
     startup_context = ""
     if not wrapper_overrides["no_startup_context"]:
-        startup_context = build_recent_context_for_cwd(str(effective_cwd))
+        startup_context = build_recent_context_for_cwd(
+            context_cwd,
+            remote_host=remote_spec.host if remote_spec is not None else "",
+        )
     runtime_canary = canary_rule
     if startup_context:
         runtime_canary = (
@@ -379,6 +455,18 @@ def run_tool(tool_name: str, args: list[str]) -> int:
         global_prompt_text = resolve_user_instructions(instructions_file)
 
     tool_prompt_file = _resolve_tool_prompt_file(config, tool_name)
+    tool_prompt_text = resolve_user_instructions(tool_prompt_file)
+
+    # Build layered global guidelines text (canary + base + project + user).
+    # Tool-specific prompt text is passed separately and inserted as its own section.
+    layered_global_text = compose_instructions(
+        canary_rule=runtime_canary,
+        tool_name="",
+        instructions_text=global_prompt_text,
+        instructions_file=instructions_file,
+        project_cwd=str(effective_cwd),
+        remote_spec=remote_spec.display if remote_spec is not None else "",
+    )
 
     effective_text = compose_instructions(
         canary_rule=runtime_canary,
@@ -386,6 +474,7 @@ def run_tool(tool_name: str, args: list[str]) -> int:
         instructions_text=global_prompt_text,
         instructions_file=instructions_file,
         project_cwd=str(effective_cwd),
+        remote_spec=remote_spec.display if remote_spec is not None else "",
     )
     effective_sha = hashlib.sha256(effective_text.encode("utf-8")).hexdigest()
     append_log(
@@ -427,7 +516,9 @@ def run_tool(tool_name: str, args: list[str]) -> int:
             target_path=spec.target_path,
             wrapper_log_file=str(log_path),
             instructions_file=instructions_file,
-            canary_rule=runtime_canary,
+            instructions_text=layered_global_text,
+            tool_instructions_text=tool_prompt_text,
+            canary_rule="",
             passthrough=(
                 wrapper_overrides["passthrough"]
                 if wrapper_overrides["passthrough"] is not None
@@ -464,7 +555,7 @@ def run_tool(tool_name: str, args: list[str]) -> int:
             traffic_max_age_days=retention_cfg["traffic_days"],
             traffic_redact=privacy_cfg["redact_traffic_bodies"],
             prompt_recv_prefix_file=_resolve_recv_context_file(effective_cwd),
-            prompt_context_cwd=str(effective_cwd),
+            prompt_context_cwd=context_cwd,
         )
 
         proxy_host = resolve_proxy_host(host)
@@ -491,12 +582,22 @@ def run_tool(tool_name: str, args: list[str]) -> int:
         env = build_proxy_env(proxy_url, ca_path, log_path, spec.extra_env)
     else:
         env = _build_direct_env(spec.extra_env)
+    prompt_editor_launcher = _install_prompt_editor_launcher()
+    project_prompt_file = ensure_project_instructions_file(
+        project_cwd=str(effective_cwd),
+        remote_spec=remote_spec.display if remote_spec is not None else "",
+    )
     env["AI_CLI_TOOL"] = tool_name
     env["AI_CLI_SESSION"] = session_id
     env["AI_CLI_WORKDIR"] = str(effective_cwd)
+    env["AI_CLI_BASE_PROMPT_FILE"] = str(Path("~/.ai-cli/base_instructions.txt").expanduser())
     env["AI_CLI_GLOBAL_PROMPT_FILE"] = instructions_file
     env["AI_CLI_TOOL_PROMPT_FILE"] = tool_prompt_file
+    env["AI_CLI_PROJECT_PROMPT_FILE"] = str(project_prompt_file)
     env["AI_CLI_PYTHON"] = sys.executable or "python3"
+    env["AI_CLI_PROMPT_EDITOR_LAUNCHER"] = prompt_editor_launcher
+    if remote_spec is not None:
+        env["AI_CLI_REMOTE_SPEC"] = remote_spec.display
     if proxy_enabled and mitm_proc is not None:
         env["AI_CLI_PROXY_PID"] = str(mitm_proc.pid)
         env["AI_CLI_PROXY_URL"] = proxy_url
@@ -523,6 +624,285 @@ def run_tool(tool_name: str, args: list[str]) -> int:
                 "(set AI_CLI_CODEX_DISABLE_EXTERNAL_EDITOR=0 to re-enable).",
             )
 
+    # ── Remote session mode ─────────────────────────────────────────────
+    # Proxy is running locally; launch the tool on the remote with an SSH
+    # reverse tunnel so the remote tool's traffic flows through our proxy.
+    # A "remote package" is assembled and pushed first so the tool runs
+    # inside an isolated $HOME with the right configs/credentials/CA certs.
+    if remote_spec is not None and _remote_session_flag:
+        from ai_cli.remote import (
+            RemoteSessionRunner,
+            install_remote_tool,
+            print_sync_status,
+            resolve_remote_tool_env,
+        )
+
+        remote_init = wrapper_overrides.get("remote_init") or ""
+        import shlex as _shlex
+        remote_tool_cmd = spec.default_binary
+        remote_tool_args_suffix = ""
+        # Forward any extra tool args
+        _rs_tool_args = list(parsed_tool_args)
+        if _rs_tool_args and _rs_tool_args[0] == "--":
+            _rs_tool_args = _rs_tool_args[1:]
+        if _rs_tool_args and Path(_rs_tool_args[0]).name == Path(binary).name:
+            _rs_tool_args = _rs_tool_args[1:]
+        if _rs_tool_args:
+            remote_tool_args_suffix = " " + " ".join(_shlex.quote(a) for a in _rs_tool_args)
+            remote_tool_cmd += remote_tool_args_suffix
+
+        _effective_proxy_port = port if proxy_enabled else 0
+        _no_package = (
+            wrapper_overrides.get("remote_no_package", False)
+            or (
+                os.environ.get("AI_CLI_REMOTE_NO_PACKAGE", "").strip().lower()
+                in {"1", "true", "yes", "on"}
+            )
+        )
+
+        # ── Packaged mode (default) ──────────────────────────────────────
+        if not _no_package:
+            from ai_cli.remote_package import (
+                PackageFileEntry,
+                build_package_manifest,
+                ensure_remote_ai_mux_asset,
+                probe_remote_session,
+                pull_session_artifacts,
+                push_package,
+                reattach_remote_session,
+                render_remote_ai_mux_config,
+            )
+
+            remote_ai_mux_binary = None
+            try:
+                remote_ai_mux_binary = ensure_remote_ai_mux_asset(remote_spec)
+            except (FileNotFoundError, RuntimeError) as exc:
+                append_log(log_path, f"Remote ai-mux unavailable, falling back to tmux: {exc}")
+
+            package = build_package_manifest(
+                tool_name,
+                remote_spec,
+                ca_path=ca_path if proxy_enabled else None,
+                ai_mux_binary=remote_ai_mux_binary,
+            )
+            try:
+                resolved_remote_binary, resolved_remote_path = resolve_remote_tool_env(
+                    remote_spec,
+                    spec.default_binary,
+                    real_home=package.real_home,
+                )
+            except RuntimeError:
+                # Tool not found — attempt auto-install
+                _install_cmd = spec.get_install_command()
+                if _install_cmd:
+                    print_sync_status(
+                        f"{tool_name} not found on {remote_spec.ssh_target}, "
+                        f"installing..."
+                    )
+                    install_remote_tool(
+                        remote_spec,
+                        tool_name,
+                        _install_cmd,
+                        real_home=package.real_home,
+                    )
+                    resolved_remote_binary, resolved_remote_path = resolve_remote_tool_env(
+                        remote_spec,
+                        spec.default_binary,
+                        real_home=package.real_home,
+                    )
+                else:
+                    raise
+            remote_tool_cmd = _shlex.quote(resolved_remote_binary) + remote_tool_args_suffix
+            remote_tool_cmd_parts = [resolved_remote_binary, *_rs_tool_args]
+
+            remote_mux_env = {
+                "AI_CLI_PYTHON": "python3",
+                "AI_CLI_PROMPT_EDITOR_LAUNCHER": f"{package.session_dir}/.ai-cli/bin/ai-prompt-editor",
+                "AI_CLI_GLOBAL_PROMPT_FILE": f"{package.session_dir}/.ai-cli/system_instructions.txt",
+                "AI_CLI_BASE_PROMPT_FILE": f"{package.session_dir}/.ai-cli/base_instructions.txt",
+                "AI_CLI_TOOL_PROMPT_FILE": f"{package.session_dir}/.ai-cli/instructions/{tool_name}.txt",
+                "AI_CLI_PROJECT_PROMPT_FILE": f"{package.session_dir}/{package.project_prompt_rel_path}",
+                "AI_CLI_TOOL": tool_name,
+                "AI_CLI_WORKDIR": remote_spec.path,
+                "PATH": resolved_remote_path,
+                "REAL_HOME": package.real_home,
+                "HOME": package.session_dir,
+                "ZDOTDIR": package.session_dir,
+                "BASH_ENV": f"{package.session_dir}/.bash_env",
+                "ENV": f"{package.session_dir}/.shrc",
+                "KSHRC": f"{package.session_dir}/.kshrc",
+            }
+            if _effective_proxy_port:
+                proxy_url = f"http://127.0.0.1:{_effective_proxy_port}"
+                remote_ca = f"{package.session_dir}/.ai-cli/remote-ca.pem"
+                remote_mux_env.update(
+                    {
+                        "HTTP_PROXY": proxy_url,
+                        "HTTPS_PROXY": proxy_url,
+                        "http_proxy": proxy_url,
+                        "https_proxy": proxy_url,
+                        "SSL_CERT_FILE": remote_ca,
+                        "REQUESTS_CA_BUNDLE": remote_ca,
+                        "NODE_EXTRA_CA_CERTS": remote_ca,
+                    }
+                )
+
+            ai_mux_command_parts = remote_tool_cmd_parts
+            if remote_init:
+                ai_mux_command_parts = [
+                    "sh",
+                    "-lc",
+                    f"{remote_init} && exec {remote_tool_cmd}",
+                ]
+
+            if remote_ai_mux_binary is not None:
+                package.entries.append(
+                    PackageFileEntry(
+                        remote_rel_path=".ai-cli/ai-mux.json",
+                        content=render_remote_ai_mux_config(
+                            tool_name=tool_name,
+                            session_name=package.session_name,
+                            command=ai_mux_command_parts,
+                            cwd=remote_spec.path,
+                            env=remote_mux_env,
+                        ),
+                    )
+                )
+
+            append_log(
+                log_path,
+                f"Remote session mode (packaged): {remote_spec.display} "
+                f"session={package.session_name} home={package.session_dir} "
+                f"proxy={'yes' if proxy_enabled else 'no'}",
+            )
+
+            try:
+                print_sync_status(
+                    f"Pushing config package → "
+                    f"{remote_spec.ssh_target}:{package.session_dir}"
+                )
+                push_package(package, remote_spec)
+
+                if remote_ai_mux_binary is not None:
+                    runner = RemoteSessionRunner(
+                        spec=remote_spec,
+                        session_name=package.session_name,
+                    )
+                    ai_mux_launch = (
+                        f"{_shlex.quote(package.session_dir + '/.ai-cli/bin/ai-mux')} "
+                        f"--config {_shlex.quote(package.session_dir + '/.ai-cli/ai-mux.json')} "
+                        f"--session-name {_shlex.quote(package.session_name)} "
+                        f"--socket-name {_shlex.quote(package.tmux_socket)}"
+                    )
+                    exit_code = runner.exec_attached(
+                        command=ai_mux_launch,
+                        proxy_port=_effective_proxy_port,
+                        home_dir=package.session_dir,
+                        real_home=package.real_home,
+                        launch_path=resolved_remote_path,
+                    )
+                    append_log(log_path, f"Remote ai-mux session exit code: {exit_code}")
+                else:
+
+                    # Check for an existing session — reattach without re-pushing
+                    if probe_remote_session(package, remote_spec):
+                        print_sync_status(
+                            f"Existing session found: {package.session_name}"
+                        )
+                        exit_code = reattach_remote_session(
+                            package,
+                            remote_spec,
+                            proxy_port=_effective_proxy_port,
+                        )
+                        append_log(log_path, f"Remote reattach exit code: {exit_code}")
+                    else:
+                        runner = RemoteSessionRunner(
+                            spec=remote_spec,
+                            session_name=package.session_name,
+                        )
+                        cd_cmd = f"cd {_shlex.quote(remote_spec.path)}"
+                        if remote_init:
+                            init_sequence = f"{cd_cmd} && {remote_init}"
+                        else:
+                            init_sequence = cd_cmd
+
+                        exit_code = runner.run_attached(
+                            command=remote_tool_cmd,
+                            init_cmd=init_sequence,
+                            proxy_port=_effective_proxy_port,
+                            home_dir=package.session_dir,
+                            real_home=package.real_home,
+                            launch_path=resolved_remote_path,
+                            tmux_socket=package.tmux_socket,
+                        )
+                        append_log(log_path, f"Remote session exit code: {exit_code}")
+            except (FileNotFoundError, RuntimeError) as exc:
+                print(f"Remote session failed: {exc}", file=sys.stderr)
+                append_log(log_path, f"Remote session failed: {exc}")
+                exit_code = 1
+            finally:
+                try:
+                    pull_session_artifacts(package, remote_spec, log_dir)
+                except Exception as exc:
+                    append_log(log_path, f"Remote artifact pull failed: {exc}")
+                if mitm_proc is not None:
+                    try:
+                        stop_process(mitm_proc)
+                    except Exception:
+                        pass
+                _cleanup_session_files(session_id)
+                append_log(log_path, "Wrapper stop (remote session, packaged)")
+            return exit_code
+
+        # ── No-package mode (raw $HOME, no isolation) ────────────────────
+        remote_session_name = (
+            wrapper_overrides.get("remote_session_name")
+            or _default_remote_session_name(tool_name, remote_spec)
+        )
+        append_log(
+            log_path,
+            f"Remote session mode (no-package): {remote_spec.display} "
+            f"session={remote_session_name} "
+            f"proxy={'yes' if proxy_enabled else 'no'}",
+        )
+
+        try:
+            runner = RemoteSessionRunner(
+                spec=remote_spec,
+                session_name=remote_session_name,
+            )
+            import shlex as _shlex
+            cd_cmd = f"cd {_shlex.quote(remote_spec.path)}"
+            if remote_init:
+                init_sequence = f"{cd_cmd} && {remote_init}"
+            else:
+                init_sequence = cd_cmd
+
+            exit_code = runner.run_attached(
+                command=remote_tool_cmd,
+                init_cmd=init_sequence,
+                proxy_port=_effective_proxy_port,
+                ca_path=ca_path if proxy_enabled else None,
+            )
+            append_log(log_path, f"Remote session exit code: {exit_code}")
+        except (FileNotFoundError, RuntimeError) as exc:
+            print(f"Remote session failed: {exc}", file=sys.stderr)
+            append_log(log_path, f"Remote session failed: {exc}")
+            exit_code = 1
+        finally:
+            try:
+                runner.pull_logs(log_dir)  # type: ignore[possibly-undefined]
+            except Exception as exc:
+                append_log(log_path, f"Remote log pull failed: {exc}")
+            if mitm_proc is not None:
+                try:
+                    stop_process(mitm_proc)
+                except Exception:
+                    pass
+            _cleanup_session_files(session_id)
+            append_log(log_path, "Wrapper stop (remote session, no-package)")
+        return exit_code
+
     # Run the tool via PTY multiplexer (TTY) or plain subprocess (non-TTY)
     def _truthy_env(name: str) -> bool:
         return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
@@ -540,6 +920,7 @@ def run_tool(tool_name: str, args: list[str]) -> int:
 
     exit_code = 1
     keep_proxy_running = False
+    remote_sync_deferred = False
     force_mux_for_claude = _truthy_env("AI_CLI_CLAUDE_USE_MUX")
     use_mux = (
         sys.stdin.isatty()
@@ -606,6 +987,7 @@ def run_tool(tool_name: str, args: list[str]) -> int:
 
                 owned_session = f"ai-{session_id}"
                 if _tmux_has_session(owned_session):
+                    remote_sync_deferred = True
                     if proxy_enabled and mitm_proc is not None:
                         append_log(
                             log_path,
@@ -653,6 +1035,24 @@ def run_tool(tool_name: str, args: list[str]) -> int:
 
         return exit_code
     finally:
+        # ── Remote sync-up ───────────────────────────────────────────────
+        if remote_spec is not None and not remote_sync_deferred:
+            from ai_cli.remote import print_sync_status, sync_up
+
+            print_sync_status(f"Syncing edits back to {remote_spec.display} …")
+            try:
+                sync_up(remote_spec, local_mirror)  # type: ignore[possibly-undefined]
+                print_sync_status("Upload complete ✓")
+                append_log(log_path, f"Remote sync-up complete: {remote_spec.display}")
+            except (RuntimeError, FileNotFoundError) as exc:
+                print_sync_status(f"Upload FAILED: {exc}")
+                append_log(log_path, f"Remote sync-up failed: {exc}")
+        elif remote_spec is not None and remote_sync_deferred:
+            append_log(
+                log_path,
+                f"Remote sync-up deferred; tmux session still active for {remote_spec.display}",
+            )
+
         # Ensure proxy is stopped when the session has actually ended.
         if keep_proxy_running:
             append_log(

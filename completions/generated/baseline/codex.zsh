@@ -836,6 +836,16 @@ esac
     ;;
 esac
 ;;
+(clear-memories)
+_arguments "${_arguments_options[@]}" : \
+'*-c+[Override a configuration value that would otherwise be loaded from \`~/.codex/config.toml\`. Use a dotted path (\`foo.bar.baz\`) to override nested values. The \`value\` portion is parsed as TOML. If it fails to parse as TOML, the raw string is used as a literal]:key=value:_default' \
+'*--config=[Override a configuration value that would otherwise be loaded from \`~/.codex/config.toml\`. Use a dotted path (\`foo.bar.baz\`) to override nested values. The \`value\` portion is parsed as TOML. If it fails to parse as TOML, the raw string is used as a literal]:key=value:_default' \
+'*--enable=[Enable a feature (repeatable). Equivalent to \`-c features.<name>=true\`]:FEATURE:_default' \
+'*--disable=[Disable a feature (repeatable). Equivalent to \`-c features.<name>=false\`]:FEATURE:_default' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+&& ret=0
+;;
 (help)
 _arguments "${_arguments_options[@]}" : \
 ":: :_codex__debug__help_commands" \
@@ -867,6 +877,10 @@ _arguments "${_arguments_options[@]}" : \
         esac
     ;;
 esac
+;;
+(clear-memories)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
 ;;
 (help)
 _arguments "${_arguments_options[@]}" : \
@@ -907,6 +921,7 @@ _arguments "${_arguments_options[@]}" : \
 '*--enable=[Enable a feature (repeatable). Equivalent to \`-c features.<name>=true\`]:FEATURE:_default' \
 '*--disable=[Disable a feature (repeatable). Equivalent to \`-c features.<name>=false\`]:FEATURE:_default' \
 '--pretty[Pretty-print the JSON output]' \
+'--resolve-host-executables[Resolve absolute program paths against basename rules, gated by any \`host_executable()\` definitions in the loaded policy files]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '*::command -- Command tokens to check against the policy:_default' \
@@ -1482,6 +1497,10 @@ _arguments "${_arguments_options[@]}" : \
     ;;
 esac
 ;;
+(clear-memories)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
         esac
     ;;
 esac
@@ -1772,6 +1791,7 @@ _codex__completion_commands() {
 _codex__debug_commands() {
     local commands; commands=(
 'app-server:Tooling\: helps debug the app server' \
+'clear-memories:Internal\: reset local memory state for a fresh start' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'codex debug commands' commands "$@"
@@ -1807,10 +1827,16 @@ _codex__debug__app-server__send-message-v2_commands() {
     local commands; commands=()
     _describe -t commands 'codex debug app-server send-message-v2 commands' commands "$@"
 }
+(( $+functions[_codex__debug__clear-memories_commands] )) ||
+_codex__debug__clear-memories_commands() {
+    local commands; commands=()
+    _describe -t commands 'codex debug clear-memories commands' commands "$@"
+}
 (( $+functions[_codex__debug__help_commands] )) ||
 _codex__debug__help_commands() {
     local commands; commands=(
 'app-server:Tooling\: helps debug the app server' \
+'clear-memories:Internal\: reset local memory state for a fresh start' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'codex debug help commands' commands "$@"
@@ -1826,6 +1852,11 @@ _codex__debug__help__app-server_commands() {
 _codex__debug__help__app-server__send-message-v2_commands() {
     local commands; commands=()
     _describe -t commands 'codex debug help app-server send-message-v2 commands' commands "$@"
+}
+(( $+functions[_codex__debug__help__clear-memories_commands] )) ||
+_codex__debug__help__clear-memories_commands() {
+    local commands; commands=()
+    _describe -t commands 'codex debug help clear-memories commands' commands "$@"
 }
 (( $+functions[_codex__debug__help__help_commands] )) ||
 _codex__debug__help__help_commands() {
@@ -2065,6 +2096,7 @@ _codex__help__completion_commands() {
 _codex__help__debug_commands() {
     local commands; commands=(
 'app-server:Tooling\: helps debug the app server' \
+'clear-memories:Internal\: reset local memory state for a fresh start' \
     )
     _describe -t commands 'codex help debug commands' commands "$@"
 }
@@ -2079,6 +2111,11 @@ _codex__help__debug__app-server_commands() {
 _codex__help__debug__app-server__send-message-v2_commands() {
     local commands; commands=()
     _describe -t commands 'codex help debug app-server send-message-v2 commands' commands "$@"
+}
+(( $+functions[_codex__help__debug__clear-memories_commands] )) ||
+_codex__help__debug__clear-memories_commands() {
+    local commands; commands=()
+    _describe -t commands 'codex help debug clear-memories commands' commands "$@"
 }
 (( $+functions[_codex__help__exec_commands] )) ||
 _codex__help__exec_commands() {

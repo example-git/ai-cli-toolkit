@@ -18,7 +18,10 @@ def _normalize_cwd(value: str) -> str:
     if not text:
         return ""
     try:
-        return str(Path(text).expanduser().resolve())
+        path = Path(text).expanduser()
+        if path.exists():
+            return str(path.resolve())
+        return str(path)
     except OSError:
         return text
 

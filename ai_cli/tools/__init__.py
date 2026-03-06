@@ -60,6 +60,9 @@ class ToolSpec:
     extra_env: dict[str, str] = field(default_factory=dict)
     """Additional environment variables to set when launching the tool."""
 
+    app_binary: Optional[str] = None
+    """macOS .app binary path — used as fallback when the CLI binary is not on PATH."""
+
     # Map of method names to the binary they require on PATH
     _METHOD_REQUIRES: dict[str, str] = field(default=None, init=False, repr=False)
 
@@ -100,7 +103,9 @@ class ToolSpec:
     def detect_installed(self, configured_binary: str = "") -> bool:
         """Check if the tool binary exists on PATH or at the configured path."""
         binary = self.resolve_binary(configured_binary)
-        return shutil.which(binary) is not None
+        if shutil.which(binary) is not None:
+            return True
+        return Path(binary).is_file()
 
     def get_version(self, configured_binary: str = "") -> Optional[str]:
         """Run version_command and return version string, or None."""
