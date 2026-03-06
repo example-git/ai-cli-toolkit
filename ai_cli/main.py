@@ -625,6 +625,7 @@ def run_tool(tool_name: str, args: list[str]) -> int:
     if remote_spec is not None and _remote_session_flag:
         from ai_cli.remote import (
             RemoteSessionRunner,
+            install_remote_tool,
             print_sync_status,
             resolve_remote_tool_env,
         )
@@ -677,11 +678,33 @@ def run_tool(tool_name: str, args: list[str]) -> int:
                 ca_path=ca_path if proxy_enabled else None,
                 ai_mux_binary=remote_ai_mux_binary,
             )
-            resolved_remote_binary, resolved_remote_path = resolve_remote_tool_env(
-                remote_spec,
-                spec.default_binary,
-                real_home=package.real_home,
-            )
+            try:
+                resolved_remote_binary, resolved_remote_path = resolve_remote_tool_env(
+                    remote_spec,
+                    spec.default_binary,
+                    real_home=package.real_home,
+                )
+            except RuntimeError:
+                # Tool not found — attempt auto-install
+                _install_cmd = spec.get_install_command()
+                if _install_cmd:
+                    print_sync_status(
+                        f"{tool_name} not found on {remote_spec.ssh_target}, "
+                        f"installing..."
+                    )
+                    install_remote_tool(
+                        remote_spec,
+                        tool_name,
+                        _install_cmd,
+                        real_home=package.real_home,
+                    )
+                    resolved_remote_binary, resolved_remote_path = resolve_remote_tool_env(
+                        remote_spec,
+                        spec.default_binary,
+                        real_home=package.real_home,
+                    )
+                else:
+                    raise
             remote_tool_cmd = _shlex.quote(resolved_remote_binary) + remote_tool_args_suffix
             remote_tool_cmd_parts = [resolved_remote_binary, *_rs_tool_args]
 

@@ -205,6 +205,47 @@ def resolve_remote_tool_env(
     return resolved_bin, resolved_path
 
 
+def install_remote_tool(
+    spec: RemoteSpec,
+    tool_name: str,
+    install_command: str,
+    *,
+    real_home: str,
+) -> None:
+    """Run *install_command* on the remote host via SSH.
+
+    Sources the same shell profiles and node-version-manager scripts used by
+    :func:`resolve_remote_tool_env` so that ``npm`` / ``npx`` are available
+    even when they're managed by nvm/fnm/volta.
+    """
+    import shlex as _shlex
+
+    home_q = _shlex.quote(real_home)
+    remote_cmd = (
+        f"export REAL_HOME={home_q}"
+        " ; export HOME=$REAL_HOME"
+        " ; . /etc/profile 2>/dev/null"
+        " ; . $REAL_HOME/.profile 2>/dev/null"
+        " ; . $REAL_HOME/.bashrc 2>/dev/null"
+        " ; . $REAL_HOME/.zshrc 2>/dev/null"
+        ' ; [ -s "${NVM_DIR:-$REAL_HOME/.nvm}/nvm.sh" ] && . "${NVM_DIR:-$REAL_HOME/.nvm}/nvm.sh" 2>/dev/null'
+        ' ; [ -s "$REAL_HOME/.config/fnm/fnm_multishells" ] && eval "$(fnm env 2>/dev/null)" 2>/dev/null'
+        ' ; [ -d "$REAL_HOME/.volta" ] && export VOLTA_HOME="$REAL_HOME/.volta" && export PATH="$VOLTA_HOME/bin:$PATH"'
+        f" ; {install_command}"
+    )
+    print_sync_status(f"Installing {tool_name} on {spec.ssh_target}: {install_command}")
+    proc = subprocess.run(
+        ["ssh", *_SSH_OPTS.split()[1:], "-t", spec.ssh_target, remote_cmd],
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"Failed to install {tool_name} on {spec.ssh_target} "
+            f"(exit {proc.returncode})"
+        )
+    print_sync_status(f"Installed {tool_name} on {spec.ssh_target}")
+
+
 # ---------------------------------------------------------------------------
 # Cleanup
 # ---------------------------------------------------------------------------
