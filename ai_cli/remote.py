@@ -161,6 +161,10 @@ def resolve_remote_tool_env(
         " ; . $REAL_HOME/.profile 2>/dev/null"
         " ; . $REAL_HOME/.bashrc 2>/dev/null"
         " ; . $REAL_HOME/.zshrc 2>/dev/null"
+        # nvm/fnm/volta often guard on interactive mode; source explicitly
+        ' ; [ -s "${NVM_DIR:-$REAL_HOME/.nvm}/nvm.sh" ] && . "${NVM_DIR:-$REAL_HOME/.nvm}/nvm.sh" 2>/dev/null'
+        ' ; [ -s "$REAL_HOME/.config/fnm/fnm_multishells" ] && eval "$(fnm env 2>/dev/null)" 2>/dev/null'
+        ' ; [ -d "$REAL_HOME/.volta" ] && export VOLTA_HOME="$REAL_HOME/.volta" && export PATH="$VOLTA_HOME/bin:$PATH"'
         f" ; export REAL_HOME={home_q}"
         f" ; export PATH=$(python3 -c {_shlex.quote(path_py)})"
         " ; unalias codex claude gemini copilot 2>/dev/null || true"
@@ -372,6 +376,9 @@ class RemoteSessionRunner:
             " ; . $REAL_HOME/.profile 2>/dev/null"
             " ; . $REAL_HOME/.bashrc 2>/dev/null"
             " ; . $REAL_HOME/.zshrc 2>/dev/null"
+            ' ; [ -s "${NVM_DIR:-$REAL_HOME/.nvm}/nvm.sh" ] && . "${NVM_DIR:-$REAL_HOME/.nvm}/nvm.sh" 2>/dev/null'
+            ' ; [ -s "$REAL_HOME/.config/fnm/fnm_multishells" ] && eval "$(fnm env 2>/dev/null)" 2>/dev/null'
+            ' ; [ -d "$REAL_HOME/.volta" ] && export VOLTA_HOME="$REAL_HOME/.volta" && export PATH="$VOLTA_HOME/bin:$PATH"'
             f" ; export REAL_HOME={real_home_expr}"
         )
         if launch_path:
@@ -496,6 +503,9 @@ class RemoteSessionRunner:
             " ; . $REAL_HOME/.profile 2>/dev/null"
             " ; . $REAL_HOME/.bashrc 2>/dev/null"
             " ; . $REAL_HOME/.zshrc 2>/dev/null"
+            ' ; [ -s "${NVM_DIR:-$REAL_HOME/.nvm}/nvm.sh" ] && . "${NVM_DIR:-$REAL_HOME/.nvm}/nvm.sh" 2>/dev/null'
+            ' ; [ -s "$REAL_HOME/.config/fnm/fnm_multishells" ] && eval "$(fnm env 2>/dev/null)" 2>/dev/null'
+            ' ; [ -d "$REAL_HOME/.volta" ] && export VOLTA_HOME="$REAL_HOME/.volta" && export PATH="$VOLTA_HOME/bin:$PATH"'
             f" ; export REAL_HOME={real_home_expr}"
         )
         if launch_path:
