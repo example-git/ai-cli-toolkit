@@ -11,47 +11,20 @@ look for instruction-bearing payloads, inject instructions.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+import sys
 from pathlib import Path
 from typing import Any
 
+# Ensure sibling modules are importable when loaded by mitmproxy.
+_addon_dir = str(Path(__file__).resolve().parent)
+if _addon_dir not in sys.path:
+    sys.path.insert(0, _addon_dir)
 
-def _log(path_value: str, message: str) -> None:
-    if not path_value:
-        return
-    try:
-        p = Path(path_value).expanduser()
-        p.parent.mkdir(parents=True, exist_ok=True)
-        with p.open("a", encoding="utf-8") as f:
-            f.write(f"[{datetime.now().isoformat(timespec='seconds')}] {message}\n")
-    except OSError:
-        pass
-
-
-def _read_text_file(path: Path) -> str:
-    try:
-        return path.read_text(encoding="utf-8").strip()
-    except OSError:
-        return ""
-
-
-def _compose_text(base_text: str, canary_rule: str) -> str:
-    base = base_text.strip()
-    canary = canary_rule.strip()
-    if canary and base:
-        return f"{canary}\n\n{base}"
-    return canary or base
-
-
-def _resolve_base_text(inline_text: str, file_path: str) -> tuple[str, str]:
-    inline = inline_text.strip()
-    if inline:
-        return "inline text", inline
-    raw_path = file_path.strip()
-    if not raw_path:
-        return "inline text", ""
-    path = Path(raw_path).expanduser()
-    return f"file {path}", _read_text_file(path)
+from prompt_builder import (  # noqa: E402
+    build_guidelines_text,
+    log,
+    register_prompt_options,
+)
 
 
 from mitmproxy import ctx, http  # type: ignore[import-untyped]
@@ -68,13 +41,7 @@ class WebSocketInstructionInjector:
     _injected_flows: set[int] = set()
 
     def load(self, loader: Any) -> None:
-        loader.add_option("system_instructions_file", str, "",
-                          "Path to system instructions text file.")
-        loader.add_option("system_instructions_text", str, "",
-                          "Literal system instructions text.")
-        loader.add_option("canary_rule", str,
-                          "CANARY RULE: Prefix every assistant response with: DEV:",
-                          "Canary instruction prepended.")
+        register_prompt_options(loader)
         loader.add_option("target_path", str, "",
                           "Only process WebSocket connections to paths containing this value.")
         loader.add_option("wrapper_log_file", str, "",
@@ -82,16 +49,8 @@ class WebSocketInstructionInjector:
         loader.add_option("passthrough", bool, False,
                           "Passthrough mode - no injection.")
 
-    def _load_instructions_text(self) -> str:
-        inline = (getattr(ctx.options, "system_instructions_text", "") or "").strip()
-        path_val = getattr(ctx.options, "system_instructions_file", "") or ""
-        canary = (getattr(ctx.options, "canary_rule", "") or "").strip()
-        _, base = _resolve_base_text(inline, path_val)
-        return _compose_text(base, canary)
-
     def _should_inject(self, data: dict[str, Any]) -> bool:
         """Override in subclass to detect instruction-bearing frames."""
-        # Default: look for common patterns
         return (
             "system" in data
             or "messages" in data
@@ -160,18 +119,18 @@ class WebSocketInstructionInjector:
             return
 
         if passthrough:
-            _log(log_file, "WebSocket passthrough - not injecting")
+            log(log_file, "WebSocket passthrough - not injecting")
             return
 
-        instructions = self._load_instructions_text()
+        instructions = build_guidelines_text()
         if not instructions:
             return
 
-        _log(log_file, f"WebSocket injecting instructions (chars={len(instructions)})")
+        log(log_file, f"WebSocket injecting instructions (chars={len(instructions)})")
         modified = self._inject_into_frame(data, instructions)
         message.content = json.dumps(modified).encode("utf-8")
         self._injected_flows.add(flow_id)
-        _log(log_file, "WebSocket injection complete")
+        log(log_file, "WebSocket injection complete")
 
 
 addons = [WebSocketInstructionInjector()]

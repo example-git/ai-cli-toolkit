@@ -393,8 +393,11 @@ def build_mitmdump_cmd(
     target_path: str,
     wrapper_log_file: str,
     instructions_file: str = "",
-    instructions_text: str = "",
-    tool_instructions_text: str = "",
+    instructions_text: str | None = None,
+    instructions_text_explicit: bool = False,
+    base_instructions_file: str = "",
+    project_instructions_file: str = "",
+    tool_instructions_file: str = "",
     canary_rule: str = "",
     passthrough: bool = False,
     debug_requests: bool = False,
@@ -408,7 +411,15 @@ def build_mitmdump_cmd(
     prompt_recv_prefix_file: str = "",
     prompt_context_cwd: str = "",
 ) -> list[str]:
-    """Build the mitmdump command line with addon scripts and options."""
+    """Build the mitmdump command line with addon scripts and options.
+
+    Addons use prompt_builder to read instruction files fresh on each request.
+    We pass file paths (not text blobs) so the command line stays short and
+    file edits take effect in real time without restarting the proxy.
+    ``instructions_text`` is ``None`` unless the user explicitly provides an
+    inline override. An explicit empty string must still be forwarded so the
+    addons do not silently fall back to the instructions file.
+    """
     cmd = [
         mitmdump_bin,
         "--quiet",
@@ -426,10 +437,16 @@ def build_mitmdump_cmd(
 
     if instructions_file:
         cmd.extend(["--set", f"system_instructions_file={instructions_file}"])
-    if instructions_text:
+    if instructions_text is not None:
         cmd.extend(["--set", f"system_instructions_text={instructions_text}"])
-    if tool_instructions_text:
-        cmd.extend(["--set", f"tool_instructions_text={tool_instructions_text}"])
+    if instructions_text_explicit:
+        cmd.extend(["--set", "system_instructions_text_explicit=true"])
+    if base_instructions_file:
+        cmd.extend(["--set", f"base_instructions_file={base_instructions_file}"])
+    if project_instructions_file:
+        cmd.extend(["--set", f"project_instructions_file={project_instructions_file}"])
+    if tool_instructions_file:
+        cmd.extend(["--set", f"tool_instructions_file={tool_instructions_file}"])
     if canary_rule:
         cmd.extend(["--set", f"canary_rule={canary_rule}"])
     if passthrough:

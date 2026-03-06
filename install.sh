@@ -290,15 +290,19 @@ else
 fi
 
 # --- ai-mux ---
+INSTALLED_MUX_DIR="${HOME}/.ai-cli/bin"
 if [ -d "$MUX_DIR" ] && command -v cargo >/dev/null 2>&1; then
   start_stage "Building ai-mux (tmux orchestrator)"
   if run_quiet bash -c "cd \"$MUX_DIR\" && cargo build --release"; then
     if [ -x "$MUX_DIR/target/release/ai-mux" ]; then
-      mkdir -p "$PKG_MUX_DIR"
+      mkdir -p "$PKG_MUX_DIR" "$INSTALLED_MUX_DIR"
       cp "$MUX_DIR/target/release/ai-mux" "$PKG_MUX_DIR/ai-mux"
       chmod +x "$PKG_MUX_DIR/ai-mux"
       cp "$MUX_DIR/target/release/ai-mux" "$BIN_DIR/ai-mux"
       chmod +x "$BIN_DIR/ai-mux"
+      cp "$MUX_DIR/target/release/ai-mux" "$INSTALLED_MUX_DIR/ai-mux"
+      chmod +x "$INSTALLED_MUX_DIR/ai-mux"
+      xattr -cr "$INSTALLED_MUX_DIR/ai-mux" 2>/dev/null || true
       stop_stage "ai-mux built and installed"
     else
       stop_stage "ai-mux binary not found"

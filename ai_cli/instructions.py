@@ -48,6 +48,11 @@ def _ai_cli_dir() -> Path:
     return Path(DEFAULT_AI_CLI_DIR).expanduser()
 
 
+def _shipped_base_instructions_path() -> Path:
+    """Return the bundled base instructions template path."""
+    return Path(__file__).resolve().parent.parent / "templates" / BASE_INSTRUCTIONS_FILE
+
+
 def _slugify(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", value.strip().lower()).strip("-")
     return slug[:48] or "project"
@@ -112,19 +117,28 @@ def ensure_project_instructions_file(project_cwd: str = "", remote_spec: str = "
 def resolve_base_instructions() -> str:
     """Load the generic base instructions template.
 
-    Looks for the shipped template first (next to this package), then
-    falls back to ~/.ai-cli/base_instructions.txt.
+    Prefers ~/.ai-cli/base_instructions.txt so user edits stay out of the repo.
+    Falls back to the shipped template if the user file is missing or empty.
     """
-    # Shipped template (inside the ai_cli package under templates/)
-    pkg_template = Path(__file__).resolve().parent.parent / "templates" / BASE_INSTRUCTIONS_FILE
-    if pkg_template.is_file():
-        text = _read_text(pkg_template)
-        if text:
-            return text
-
-    # User-local override
     user_template = _ai_cli_dir() / BASE_INSTRUCTIONS_FILE
-    return _read_text(user_template)
+    user_text = _read_text(user_template)
+    if user_text:
+        return user_text
+
+    return _read_text(_shipped_base_instructions_path())
+
+
+def resolve_base_instructions_path() -> Path:
+    """Return the active base instructions file path."""
+    user_template = _ai_cli_dir() / BASE_INSTRUCTIONS_FILE
+    if _read_text(user_template):
+        return user_template
+
+    pkg_template = _shipped_base_instructions_path()
+    if _read_text(pkg_template):
+        return pkg_template
+
+    return user_template
 
 
 def resolve_tool_instructions(tool_name: str) -> str:
@@ -180,7 +194,7 @@ def resolve_instructions_file(path_value: str = "") -> str:
 def compose_instructions(
     canary_rule: str = DEFAULT_CANARY_RULE,
     tool_name: str = "",
-    instructions_text: str = "",
+    instructions_text: str | None = None,
     instructions_file: str = "",
     project_cwd: str = "",
     remote_spec: str = "",
@@ -219,8 +233,10 @@ def compose_instructions(
         layers.append(project_text)
 
     # Layer 5: User custom instructions
-    if instructions_text.strip():
-        layers.append(instructions_text.strip())
+    if instructions_text is not None:
+        inline_text = instructions_text.strip()
+        if inline_text:
+            layers.append(inline_text)
     else:
         user_text = resolve_user_instructions(instructions_file)
         if user_text:

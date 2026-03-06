@@ -9,55 +9,30 @@ Supported modes:
 - prepend: add injected text before existing developer text
 
 If no developer message exists, one is inserted at the start of input[].
-
-Self-contained — no ai_cli imports (loaded by mitmdump directly).
 """
 
 from __future__ import annotations
 
 import json
 import re
-from datetime import datetime
+import sys
 from pathlib import Path
 from typing import Any
 
+# Ensure sibling modules are importable when loaded by mitmproxy.
+_addon_dir = str(Path(__file__).resolve().parent)
+if _addon_dir not in sys.path:
+    sys.path.insert(0, _addon_dir)
 
-def _read_text_file(path: Path) -> str:
-    try:
-        return path.read_text(encoding="utf-8").strip()
-    except OSError:
-        return ""
-
-
-def _compose_text(base_text: str, canary_rule: str) -> str:
-    base = base_text.strip()
-    canary = canary_rule.strip()
-    if canary and base:
-        return f"{canary}\n\n{base}"
-    return canary or base
-
-
-def _resolve_base_text(inline_text: str, file_path: str) -> tuple[str, str]:
-    inline = inline_text.strip()
-    if inline:
-        return "inline text", inline
-    raw_path = file_path.strip()
-    if not raw_path:
-        return "inline text", ""
-    path = Path(raw_path).expanduser()
-    return f"file {path}", _read_text_file(path)
-
-
-def _log(path_value: str, message: str) -> None:
-    if not path_value:
-        return
-    try:
-        p = Path(path_value).expanduser()
-        p.parent.mkdir(parents=True, exist_ok=True)
-        with p.open("a", encoding="utf-8") as f:
-            f.write(f"[{datetime.now().isoformat(timespec='seconds')}] {message}\n")
-    except OSError:
-        pass
+from prompt_builder import (  # noqa: E402
+    build_guidelines_text,
+    load_layer,
+    load_option,
+    log,
+    read_text_file,
+    register_prompt_options,
+    section,
+)
 
 
 def _normalize_rewrite_test_mode(value: str) -> str:
@@ -136,40 +111,6 @@ def _extract_recurring_blocks(existing_text: str) -> list[tuple[str, str]]:
     return recurring
 
 
-def _section(tag: str, text: str) -> str:
-    body = (text or "").strip()
-    if not body:
-        return ""
-    return f"<{tag}>\n{body}\n</{tag}>"
-
-
-def _compose_custom_sections(global_guidelines: str, developer_prompt: str) -> str:
-    blocks: list[str] = []
-    global_block = _section("GLOBAL GUIDELINES", global_guidelines)
-    if global_block:
-        blocks.append(global_block)
-    developer_block = _section("DEVELOPER PROMPT", developer_prompt)
-    if developer_block:
-        blocks.append(developer_block)
-    return "\n\n".join(blocks).strip()
-
-
-def _compose_overwrite_sections(
-    global_guidelines: str,
-    developer_prompt: str,
-    recurring_blocks: list[tuple[str, str]],
-) -> str:
-    blocks: list[str] = []
-    custom = _compose_custom_sections(global_guidelines, developer_prompt)
-    if custom:
-        blocks.append(custom)
-    for tag, value in recurring_blocks:
-        block = _section(tag, value)
-        if block:
-            blocks.append(block)
-    return "\n\n".join(blocks).strip()
-
-
 def _extract_message_text(message: dict[str, Any]) -> str:
     content = message.get("content")
     if isinstance(content, str):
@@ -220,15 +161,7 @@ class DeveloperInstructionInjector:
     _ws_injected_flows: set[int] = set()
 
     def load(self, loader: Any) -> None:
-        loader.add_option("system_instructions_file", str, "",
-                          "Path to developer instructions text file.")
-        loader.add_option("system_instructions_text", str, "",
-                          "Literal developer instructions text.")
-        loader.add_option("tool_instructions_text", str, "",
-                  "Literal tool-specific instructions text.")
-        loader.add_option("canary_rule", str,
-                          "CANARY RULE: Prefix every assistant response with: DEV:",
-                          "Canary instruction prepended before developer instructions.")
+        register_prompt_options(loader)
         loader.add_option("target_path", str,
                           "/backend-api/codex/responses",
                           "Only inject for request paths containing this value.")
@@ -248,27 +181,37 @@ class DeveloperInstructionInjector:
                           "Tool-specific developer prompt file for Codex sectioned prompt.")
 
     @staticmethod
-    def _load_global_guidelines_text() -> str:
-        inline = (getattr(ctx.options, "system_instructions_text", "") or "").strip()
-        path_val = getattr(ctx.options, "system_instructions_file", "") or ""
-        canary = (getattr(ctx.options, "canary_rule", "") or "").strip()
-        _, base = _resolve_base_text(inline, path_val)
-        return _compose_text(base, canary)
-
-    @staticmethod
     def _load_developer_prompt_text() -> str:
-        inline = (getattr(ctx.options, "tool_instructions_text", "") or "").strip()
-        if inline:
-            return inline
-        path_val = (getattr(ctx.options, "codex_developer_prompt_file", "") or "").strip()
+        prompt = load_layer(
+            "tool_instructions_text",
+            "tool_instructions_file",
+            "tool_instructions_text_explicit",
+        )
+        if prompt:
+            return prompt
+        path_val = load_option("codex_developer_prompt_file")
         if not path_val:
             return ""
-        return _read_text_file(Path(path_val).expanduser()).strip()
+        return read_text_file(Path(path_val).expanduser()).strip()
+
+    @staticmethod
+    def _compose_sectioned_text(recurring_blocks: list[tuple[str, str]]) -> str:
+        developer_prompt = DeveloperInstructionInjector._load_developer_prompt_text()
+        guidelines_text = build_guidelines_text(developer_prompt=developer_prompt)
+
+        blocks: list[str] = []
+        if guidelines_text:
+            blocks.append(guidelines_text)
+        for tag, value in recurring_blocks:
+            block = section(tag, value)
+            if block:
+                blocks.append(block)
+        return "\n\n".join(blocks).strip()
 
     def _inject_body(self, body: dict[str, Any], log_file: str) -> tuple[str, str, int] | None:
         messages = body.get("input")
         if not isinstance(messages, list):
-            _log(log_file, "Addon skip: body.input is not a list")
+            log(log_file, "Addon skip: body.input is not a list")
             return None
 
         rewrite_test_mode = _normalize_rewrite_test_mode(
@@ -288,25 +231,25 @@ class DeveloperInstructionInjector:
         if first_developer_idx >= 0:
             first_message = messages[first_developer_idx]
             if not isinstance(first_message, dict):
-                _log(log_file, "Addon skip: first developer message is not an object")
+                log(log_file, "Addon skip: first developer message is not an object")
                 return None
             existing_text = _extract_message_text(first_message)
 
         recurring_blocks = _extract_recurring_blocks(existing_text)
-        global_guidelines = self._load_global_guidelines_text()
-        developer_prompt = self._load_developer_prompt_text()
-        custom_text = _compose_custom_sections(global_guidelines, developer_prompt)
-        overwrite_text = _compose_overwrite_sections(
-            global_guidelines=global_guidelines,
-            developer_prompt=developer_prompt,
-            recurring_blocks=recurring_blocks,
-        )
-        next_text = overwrite_text if merge_mode == "overwrite" else custom_text
+        sectioned_text = self._compose_sectioned_text(recurring_blocks)
+        if merge_mode == "overwrite":
+            next_text = sectioned_text
+        else:
+            next_text = re.sub(
+                r"(?is)<RECURRING [^>]+>.*?</RECURRING [^>]+>",
+                "",
+                sectioned_text,
+            ).strip()
         if _rewrite_test_outgoing_enabled(rewrite_test_mode):
             next_text = _apply_outgoing_probe(next_text, rewrite_test_tag)
 
         if not next_text:
-            _log(log_file, "Addon skip: composed sectioned developer instructions empty")
+            log(log_file, "Addon skip: composed sectioned developer instructions empty")
             return None
 
         action = "merged"
@@ -321,7 +264,7 @@ class DeveloperInstructionInjector:
             first_message = messages[first_developer_idx]
             merged_text = _merge_text(existing_text, next_text, merge_mode)
             if merged_text == existing_text:
-                _log(
+                log(
                     log_file,
                     (
                         "Addon skip: developer message already matches "
@@ -344,25 +287,25 @@ class DeveloperInstructionInjector:
         log_file = getattr(ctx.options, "wrapper_log_file", "") or ""
         passthrough = getattr(ctx.options, "passthrough", False)
 
-        _log(log_file, f"Addon saw request: method={flow.request.method} path={flow.request.path}")
+        log(log_file, f"Addon saw request: method={flow.request.method} path={flow.request.path}")
 
         body_text = flow.request.get_text(strict=False)
         if not body_text:
-            _log(log_file, "Addon skip: empty request body")
+            log(log_file, "Addon skip: empty request body")
             return
 
         try:
             body = json.loads(body_text)
         except json.JSONDecodeError:
-            _log(log_file, "Addon skip: request body is not JSON")
+            log(log_file, "Addon skip: request body is not JSON")
             return
 
         if not isinstance(body, dict):
-            _log(log_file, "Addon skip: JSON body is not an object")
+            log(log_file, "Addon skip: JSON body is not an object")
             return
 
         if passthrough:
-            _log(log_file, "Passthrough mode - not injecting")
+            log(log_file, "Passthrough mode - not injecting")
             return
 
         injected = self._inject_body(body, log_file)
@@ -371,7 +314,7 @@ class DeveloperInstructionInjector:
         action, merge_mode, injected_chars = injected
 
         flow.request.set_text(json.dumps(body))
-        _log(
+        log(
             log_file,
             (
                 f"Addon {action} developer message "
@@ -390,7 +333,7 @@ class DeveloperInstructionInjector:
 
         log_file = getattr(ctx.options, "wrapper_log_file", "") or ""
         if getattr(ctx.options, "passthrough", False):
-            _log(log_file, "WebSocket passthrough - not injecting")
+            log(log_file, "WebSocket passthrough - not injecting")
             return
 
         flow_id = id(flow)
@@ -418,7 +361,7 @@ class DeveloperInstructionInjector:
         updated = json.dumps(body)
         message.content = updated.encode("utf-8") if isinstance(raw_content, bytes) else updated
         self._ws_injected_flows.add(flow_id)
-        _log(
+        log(
             log_file,
             (
                 f"Addon {action} developer message over websocket "
@@ -432,7 +375,7 @@ class DeveloperInstructionInjector:
             return
         log_file = getattr(ctx.options, "wrapper_log_file", "") or ""
         status = flow.response.status_code if flow.response else "no response"
-        _log(log_file, f"Addon saw response: status={status} path={flow.request.path}")
+        log(log_file, f"Addon saw response: status={status} path={flow.request.path}")
         if not flow.response:
             return
 
@@ -448,7 +391,7 @@ class DeveloperInstructionInjector:
 
         body_text = flow.response.get_text(strict=False) or ""
         if not body_text:
-            _log(log_file, "Incoming rewrite-test: response body empty; header marker set only")
+            log(log_file, "Incoming rewrite-test: response body empty; header marker set only")
             return
 
         content_type = (flow.response.headers.get("content-type", "") or "").lower()
@@ -457,7 +400,7 @@ class DeveloperInstructionInjector:
         if "text/event-stream" in content_type or body_text.lstrip().startswith("event:"):
             if marker not in body_text:
                 flow.response.set_text(f": {marker}\n{body_text}")
-                _log(log_file, "Incoming rewrite-test applied to SSE response body")
+                log(log_file, "Incoming rewrite-test applied to SSE response body")
             return
 
         try:
@@ -473,12 +416,12 @@ class DeveloperInstructionInjector:
                     "tag": rewrite_test_tag or "default",
                 }
                 flow.response.set_text(json.dumps(payload))
-                _log(log_file, "Incoming rewrite-test applied to JSON response body")
+                log(log_file, "Incoming rewrite-test applied to JSON response body")
             return
 
         if marker not in body_text:
             flow.response.set_text(f"{marker}\n\n{body_text}")
-            _log(log_file, "Incoming rewrite-test applied to text response body")
+            log(log_file, "Incoming rewrite-test applied to text response body")
 
 
 addons = [DeveloperInstructionInjector()]

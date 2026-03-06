@@ -59,6 +59,25 @@ def test_compose_instructions_prefers_inline_user_text(monkeypatch) -> None:
     assert composed == "BASE\n\nINLINE"
 
 
+def test_compose_instructions_explicit_empty_inline_disables_file_fallback(monkeypatch) -> None:
+    monkeypatch.setattr(instructions, "resolve_base_instructions", lambda: "BASE")
+    monkeypatch.setattr(
+        instructions,
+        "resolve_project_instructions",
+        lambda project_cwd="", remote_spec="": "",
+    )
+    monkeypatch.setattr(instructions, "resolve_user_instructions", lambda custom_path="": "USER")
+
+    composed = instructions.compose_instructions(
+        canary_rule="",
+        tool_name="",
+        instructions_text="",
+        instructions_file="/tmp/custom.txt",
+    )
+
+    assert composed == "BASE"
+
+
 def test_ensure_project_instructions_file_uses_central_project_prompts_dir(
     tmp_path, monkeypatch
 ) -> None:
@@ -90,6 +109,44 @@ def test_resolve_instructions_file_creates_default_file(tmp_path, monkeypatch) -
     assert resolved_path == tmp_path / instructions.DEFAULT_INSTRUCTIONS_FILE
     assert resolved_path.is_file()
     assert resolved_path.read_text(encoding="utf-8") == ""
+
+
+def test_resolve_base_instructions_prefers_user_file(tmp_path, monkeypatch) -> None:
+    ai_cli_dir = tmp_path / ".ai-cli"
+    ai_cli_dir.mkdir()
+    user_base = ai_cli_dir / instructions.BASE_INSTRUCTIONS_FILE
+    user_base.write_text("USER BASE\n", encoding="utf-8")
+    shipped_base = tmp_path / "templates" / instructions.BASE_INSTRUCTIONS_FILE
+    shipped_base.parent.mkdir()
+    shipped_base.write_text("SHIPPED BASE\n", encoding="utf-8")
+
+    monkeypatch.setattr(instructions, "DEFAULT_AI_CLI_DIR", str(ai_cli_dir))
+    monkeypatch.setattr(
+        instructions,
+        "_shipped_base_instructions_path",
+        lambda: shipped_base,
+    )
+
+    assert instructions.resolve_base_instructions() == "USER BASE"
+    assert instructions.resolve_base_instructions_path() == user_base
+
+
+def test_resolve_base_instructions_falls_back_to_shipped_template(tmp_path, monkeypatch) -> None:
+    ai_cli_dir = tmp_path / ".ai-cli"
+    ai_cli_dir.mkdir()
+    shipped_base = tmp_path / "templates" / instructions.BASE_INSTRUCTIONS_FILE
+    shipped_base.parent.mkdir()
+    shipped_base.write_text("SHIPPED BASE\n", encoding="utf-8")
+
+    monkeypatch.setattr(instructions, "DEFAULT_AI_CLI_DIR", str(ai_cli_dir))
+    monkeypatch.setattr(
+        instructions,
+        "_shipped_base_instructions_path",
+        lambda: shipped_base,
+    )
+
+    assert instructions.resolve_base_instructions() == "SHIPPED BASE"
+    assert instructions.resolve_base_instructions_path() == shipped_base
 
 
 def test_resolve_base_system_text_from_inline_and_file(tmp_path) -> None:

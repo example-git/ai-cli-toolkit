@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import filecmp
 import os
 import shutil
 import signal
@@ -447,14 +448,81 @@ def extract_launch_cwd(
     return resolved, args[1:], None
 
 
+_INSTALLED_MUX = Path("~/.ai-cli/bin/ai-mux").expanduser()
+
+
+def _packaged_mux_binary() -> Path | None:
+    """Return the correct packaged ai-mux binary for the current platform/arch."""
+    import platform
+
+    bin_dir = Path(__file__).resolve().parent / "bin"
+    system = platform.system().lower()   # 'darwin', 'linux'
+    machine = platform.machine().lower()  # 'arm64', 'aarch64', 'x86_64'
+
+    # Build candidate list: most specific first, generic fallback last.
+    candidates: list[Path] = []
+    if system == "linux" and machine in ("x86_64", "amd64"):
+        candidates.append(bin_dir / "ai-mux-linux-x86_64")
+    elif system == "linux" and machine in ("arm64", "aarch64"):
+        candidates.append(bin_dir / "ai-mux-linux-arm64")
+    elif system == "darwin" and machine in ("arm64", "aarch64"):
+        candidates.append(bin_dir / "ai-mux-darwin-arm64")
+    elif system == "darwin" and machine in ("x86_64", "amd64"):
+        candidates.append(bin_dir / "ai-mux-darwin-x86_64")
+    # Generic fallback (the default arm64 macOS binary)
+    candidates.append(bin_dir / "ai-mux")
+
+    for c in candidates:
+        if c.is_file() and os.access(c, os.X_OK):
+            return c
+    return None
+
+
+def _ensure_installed_mux() -> Path | None:
+    packaged = _packaged_mux_binary()
+    if packaged is None:
+        if _INSTALLED_MUX.is_file() and os.access(_INSTALLED_MUX, os.X_OK):
+            return _INSTALLED_MUX
+        return None
+
+    if _INSTALLED_MUX.is_file() and os.access(_INSTALLED_MUX, os.X_OK):
+        try:
+            if filecmp.cmp(packaged, _INSTALLED_MUX, shallow=False):
+                return _INSTALLED_MUX
+        except OSError:
+            pass
+
+    _INSTALLED_MUX.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(packaged, _INSTALLED_MUX)
+    _INSTALLED_MUX.chmod(0o755)
+    # Clear macOS quarantine/provenance xattrs so the binary can run from
+    # any volume without being SIGKILL'd by Gatekeeper.
+    try:
+        subprocess.run(
+            ["xattr", "-cr", str(_INSTALLED_MUX)],
+            capture_output=True, timeout=5,
+        )
+    except Exception:
+        pass
+    return _INSTALLED_MUX
+
+
 def find_ai_mux() -> str | None:
+    # Prefer the installed copy in ~/.ai-cli/bin (safe from volume restrictions).
+    installed = _ensure_installed_mux()
+    if installed and installed.is_file() and os.access(installed, os.X_OK):
+        return str(installed)
+
     repo_root = Path(__file__).resolve().parent.parent
-    packaged = Path(__file__).resolve().parent / "bin" / "ai-mux"
-    candidates = [
-        packaged,
+    candidates: list[Path] = []
+    # Platform-aware packaged binary
+    packaged = _packaged_mux_binary()
+    if packaged:
+        candidates.append(packaged)
+    candidates.extend([
         repo_root / "mux" / "target" / "release" / "ai-mux",
         Path("~/.local/bin/ai-mux").expanduser(),
-    ]
+    ])
     path_hit = shutil.which("ai-mux")
     if path_hit:
         candidates.insert(1, Path(path_hit))
@@ -466,8 +534,11 @@ def find_ai_mux() -> str | None:
 
 
 def ai_mux_status() -> tuple[str, str | None]:
-    packaged = Path(__file__).resolve().parent / "bin" / "ai-mux"
-    if packaged.is_file() and os.access(packaged, os.X_OK):
+    if _INSTALLED_MUX.is_file() and os.access(_INSTALLED_MUX, os.X_OK):
+        return "installed", str(_INSTALLED_MUX)
+
+    packaged = _packaged_mux_binary()
+    if packaged:
         return "packaged", str(packaged)
 
     path_hit = shutil.which("ai-mux")

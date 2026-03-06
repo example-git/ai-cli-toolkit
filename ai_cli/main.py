@@ -31,11 +31,10 @@ from ai_cli.config import (
 )
 from ai_cli.housekeeping import prune_old_logs, prune_old_traffic_rows
 from ai_cli.instructions import (
-    compose_instructions,
     ensure_project_instructions_file,
     edit_instructions,
+    resolve_base_instructions_path,
     resolve_instructions_file,
-    resolve_user_instructions,
 )
 from ai_cli.log import append_log, fmt_cmd
 from ai_cli.main_helpers import (
@@ -366,7 +365,7 @@ def run_tool(tool_name: str, args: list[str]) -> int:
 
     wrapper_flag_used = (
         wrapper_overrides["instructions_file"] is not None
-        or bool((wrapper_overrides["instructions_text"] or "").strip())
+        or wrapper_overrides["instructions_text"] is not None
         or wrapper_overrides["canary_rule"] is not None
         or wrapper_overrides["passthrough"] is not None
         or wrapper_overrides["debug_requests"] is not None
@@ -413,9 +412,17 @@ def run_tool(tool_name: str, args: list[str]) -> int:
     append_log(log_path, f"Tool command: {fmt_cmd(tool_cmd)}")
 
     # Resolve instructions
+    explicit_instructions_file = wrapper_overrides["instructions_file"]
+    if explicit_instructions_file is not None and not explicit_instructions_file.strip():
+        print(
+            "--ai-cli-system-instructions-file requires a non-empty path.",
+            file=sys.stderr,
+        )
+        return 1
+
     resolved_global_instructions_path = (
-        wrapper_overrides["instructions_file"]
-        if wrapper_overrides["instructions_file"] is not None
+        explicit_instructions_file
+        if explicit_instructions_file is not None
         else config.get("instructions_file", "")
     )
     try:
@@ -447,39 +454,28 @@ def run_tool(tool_name: str, args: list[str]) -> int:
         for line in startup_context.splitlines():
             print(f"  {line}", file=sys.stderr)
 
-    global_prompt_text = ""
-    inline_global_override = (wrapper_overrides["instructions_text"] or "").strip()
-    if inline_global_override:
-        global_prompt_text = inline_global_override
-    else:
-        global_prompt_text = resolve_user_instructions(instructions_file)
+    # Inline text override (--ai-cli-instructions-text) — only passed when
+    # the user explicitly provides text instead of relying on the file.
+    inline_global_override = wrapper_overrides["instructions_text"]
+    proxy_instructions_file = (
+        ""
+        if inline_global_override is not None
+        else instructions_file
+    )
 
     tool_prompt_file = _resolve_tool_prompt_file(config, tool_name)
-    tool_prompt_text = resolve_user_instructions(tool_prompt_file)
-
-    # Build layered global guidelines text (canary + base + project + user).
-    # Tool-specific prompt text is passed separately and inserted as its own section.
-    layered_global_text = compose_instructions(
-        canary_rule=runtime_canary,
-        tool_name="",
-        instructions_text=global_prompt_text,
-        instructions_file=instructions_file,
+    project_prompt_file = ensure_project_instructions_file(
         project_cwd=str(effective_cwd),
         remote_spec=remote_spec.display if remote_spec is not None else "",
     )
+    base_prompt_file = str(resolve_base_instructions_path())
 
-    effective_text = compose_instructions(
-        canary_rule=runtime_canary,
-        tool_name=tool_name,
-        instructions_text=global_prompt_text,
-        instructions_file=instructions_file,
-        project_cwd=str(effective_cwd),
-        remote_spec=remote_spec.display if remote_spec is not None else "",
-    )
-    effective_sha = hashlib.sha256(effective_text.encode("utf-8")).hexdigest()
+    # Addons use prompt_builder to read files fresh on each request —
+    # we only pass file paths and canary_rule via --set, not text blobs.
     append_log(
         log_path,
-        f"Instructions: chars={len(effective_text)} sha256={effective_sha}",
+        f"Instructions: global={instructions_file} base={base_prompt_file} "
+        f"project={project_prompt_file} tool={tool_prompt_file}",
     )
 
     # Build addon list
@@ -515,10 +511,13 @@ def run_tool(tool_name: str, args: list[str]) -> int:
             addon_paths=addon_paths,
             target_path=spec.target_path,
             wrapper_log_file=str(log_path),
-            instructions_file=instructions_file,
-            instructions_text=layered_global_text,
-            tool_instructions_text=tool_prompt_text,
-            canary_rule="",
+            instructions_file=proxy_instructions_file,
+            instructions_text=inline_global_override,
+            instructions_text_explicit=(inline_global_override is not None),
+            base_instructions_file=base_prompt_file,
+            project_instructions_file=str(project_prompt_file),
+            tool_instructions_file=tool_prompt_file,
+            canary_rule=runtime_canary,
             passthrough=(
                 wrapper_overrides["passthrough"]
                 if wrapper_overrides["passthrough"] is not None
@@ -583,14 +582,10 @@ def run_tool(tool_name: str, args: list[str]) -> int:
     else:
         env = _build_direct_env(spec.extra_env)
     prompt_editor_launcher = _install_prompt_editor_launcher()
-    project_prompt_file = ensure_project_instructions_file(
-        project_cwd=str(effective_cwd),
-        remote_spec=remote_spec.display if remote_spec is not None else "",
-    )
     env["AI_CLI_TOOL"] = tool_name
     env["AI_CLI_SESSION"] = session_id
     env["AI_CLI_WORKDIR"] = str(effective_cwd)
-    env["AI_CLI_BASE_PROMPT_FILE"] = str(Path("~/.ai-cli/base_instructions.txt").expanduser())
+    env["AI_CLI_BASE_PROMPT_FILE"] = base_prompt_file
     env["AI_CLI_GLOBAL_PROMPT_FILE"] = instructions_file
     env["AI_CLI_TOOL_PROMPT_FILE"] = tool_prompt_file
     env["AI_CLI_PROJECT_PROMPT_FILE"] = str(project_prompt_file)
