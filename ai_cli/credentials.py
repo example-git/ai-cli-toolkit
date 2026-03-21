@@ -42,6 +42,7 @@ CREDENTIALS_KEY_FILE_NAME = ".credentials.key"
 # Path helpers
 # ---------------------------------------------------------------------------
 
+
 def _config_dir() -> Path:
     config_dir = os.getenv("CLAUDE_CONFIG_DIR", DEFAULT_CLAUDE_CONFIG_DIR)
     return Path(config_dir).expanduser()
@@ -62,6 +63,7 @@ def credentials_key_path() -> Path:
 # ---------------------------------------------------------------------------
 # JSON helpers
 # ---------------------------------------------------------------------------
+
 
 def parse_json_dict(text: str) -> dict[str, Any] | None:
     if not text:
@@ -87,6 +89,7 @@ def parse_scopes(value: Any) -> list[str]:
 # Deep search
 # ---------------------------------------------------------------------------
 
+
 def deep_find_value(payload: Any, keys: tuple[str, ...]) -> Any:
     """Recursively search nested dicts/lists for the first matching key."""
     if isinstance(payload, dict):
@@ -109,6 +112,7 @@ def deep_find_value(payload: Any, keys: tuple[str, ...]) -> Any:
 # OAuth metadata extraction
 # ---------------------------------------------------------------------------
 
+
 def extract_oauth_metadata(payload: dict[str, Any]) -> dict[str, Any]:
     """Extract scopes, subscription type, and rate limit tier from a payload."""
     metadata: dict[str, Any] = {}
@@ -118,9 +122,7 @@ def extract_oauth_metadata(payload: dict[str, Any]) -> dict[str, Any]:
     if scopes:
         metadata["scopes"] = scopes
 
-    subscription = deep_find_value(
-        payload, ("subscriptionType", "subscription_type")
-    )
+    subscription = deep_find_value(payload, ("subscriptionType", "subscription_type"))
     if isinstance(subscription, str) and subscription:
         metadata["subscriptionType"] = subscription
 
@@ -165,6 +167,7 @@ def subscription_type_from_profile(profile: dict[str, Any]) -> str | None:
 # Credential I/O
 # ---------------------------------------------------------------------------
 
+
 def read_credentials_doc() -> dict[str, Any]:
     """Read the plain credentials JSON file."""
     path = credentials_path()
@@ -188,9 +191,7 @@ def ensure_credentials_key(wrapper_log_file: str) -> Path | None:
         append_log_str(wrapper_log_file, f"Created credentials key at {key_path}")
         return key_path
     except OSError as exc:
-        append_log_str(
-            wrapper_log_file, f"Failed creating credentials key {key_path}: {exc}"
-        )
+        append_log_str(wrapper_log_file, f"Failed creating credentials key {key_path}: {exc}")
         return None
 
 
@@ -248,9 +249,7 @@ def write_encrypted_credentials(
     try:
         enc_path.write_text(proc.stdout, encoding="utf-8")
         os.chmod(enc_path, 0o600)
-        append_log_str(
-            wrapper_log_file, f"Saved encrypted credentials to {enc_path}"
-        )
+        append_log_str(wrapper_log_file, f"Saved encrypted credentials to {enc_path}")
     except OSError as exc:
         append_log_str(
             wrapper_log_file,
@@ -273,14 +272,13 @@ def write_claude_ai_oauth(
         append_log_str(wrapper_log_file, f"Saved claudeAiOauth to {path}")
         write_encrypted_credentials(data, wrapper_log_file)
     except OSError as exc:
-        append_log_str(
-            wrapper_log_file, f"Failed to save claudeAiOauth to {path}: {exc}"
-        )
+        append_log_str(wrapper_log_file, f"Failed to save claudeAiOauth to {path}: {exc}")
 
 
 # ---------------------------------------------------------------------------
 # OAuth payload builder
 # ---------------------------------------------------------------------------
+
 
 def build_bootstrap_oauth(
     bearer_token: str | None = None,
@@ -292,8 +290,7 @@ def build_bootstrap_oauth(
     metadata = metadata or {}
 
     if bearer_token and (
-        "accessToken" not in oauth_payload
-        or not isinstance(oauth_payload.get("accessToken"), str)
+        "accessToken" not in oauth_payload or not isinstance(oauth_payload.get("accessToken"), str)
     ):
         oauth_payload["accessToken"] = bearer_token
 
@@ -310,16 +307,12 @@ def build_bootstrap_oauth(
     if not isinstance(expires_at, int):
         oauth_payload["expiresAt"] = int(time.time() * 1000 + (3600 * 1000))
 
-    if "subscriptionType" in metadata and isinstance(
-        metadata["subscriptionType"], str
-    ):
+    if "subscriptionType" in metadata and isinstance(metadata["subscriptionType"], str):
         oauth_payload["subscriptionType"] = metadata["subscriptionType"]
     elif "subscriptionType" not in oauth_payload:
         oauth_payload["subscriptionType"] = None
 
-    if "rateLimitTier" in metadata and isinstance(
-        metadata["rateLimitTier"], str
-    ):
+    if "rateLimitTier" in metadata and isinstance(metadata["rateLimitTier"], str):
         oauth_payload["rateLimitTier"] = metadata["rateLimitTier"]
 
     if "refreshToken" not in oauth_payload:

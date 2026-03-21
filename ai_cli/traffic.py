@@ -241,6 +241,7 @@ def _render_terminal_line(line: str) -> str:
 
 # ── Plain text output (non-interactive) ───────────────────────────────
 
+
 def _print_table(rows: list[sqlite3.Row]) -> None:
     """Print traffic rows as a formatted table."""
     if not rows:
@@ -261,7 +262,7 @@ def _print_table(rows: list[sqlite3.Row]) -> None:
         host_display = r["host"]
         if len(host_display) > 23:
             host_display = host_display[:20] + "..."
-        prov_display = (r["provider"] or "-")
+        prov_display = r["provider"] or "-"
         if len(prov_display) > 9:
             prov_display = prov_display[:8] + "…"
 
@@ -325,8 +326,18 @@ def _request_params(row: sqlite3.Row) -> list[tuple[str, str]]:
     # Include a few additional scalar keys for debugging unknown providers.
     extra_count = 0
     for key in sorted(body.keys()):
-        if key in {"model", "stream", "temperature", "top_p", "max_tokens", "tool_choice",
-                   "messages", "input", "contents", "tools"}:
+        if key in {
+            "model",
+            "stream",
+            "temperature",
+            "top_p",
+            "max_tokens",
+            "tool_choice",
+            "messages",
+            "input",
+            "contents",
+            "tools",
+        }:
             continue
         body_value = body.get(key)
         if isinstance(body_value, (str, int, float, bool)) or body_value is None:
@@ -717,12 +728,16 @@ def _detail_content_lines(
 
     if row["req_body"]:
         lines.append("── Request Body ──")
-        lines.extend(_format_body_pairs_lines(row["req_body"], width=width, max_lines=max_body_lines))
+        lines.extend(
+            _format_body_pairs_lines(row["req_body"], width=width, max_lines=max_body_lines)
+        )
         lines.append("")
 
     if row["resp_body"]:
         lines.append("── Response Body ──")
-        lines.extend(_format_body_pairs_lines(row["resp_body"], width=width, max_lines=max_body_lines))
+        lines.extend(
+            _format_body_pairs_lines(row["resp_body"], width=width, max_lines=max_body_lines)
+        )
         lines.append("")
 
     if not row["req_body"] and not row["resp_body"]:
@@ -734,6 +749,7 @@ def _detail_content_lines(
 
 # ── Interactive urwid viewer ─────────────────────────────────────────
 
+
 def _detail_lines(row: sqlite3.Row, index: int, total: int, width: int) -> list[str]:
     """Build detail-view lines for interactive UIs."""
     lines: list[str] = [f"Detail {index + 1}/{total}  ID={row['id']}", ""]
@@ -741,7 +757,9 @@ def _detail_lines(row: sqlite3.Row, index: int, total: int, width: int) -> list[
     return lines
 
 
-def _interactive_viewer_urwid(rows: list[sqlite3.Row], conn: sqlite3.Connection, args: argparse.Namespace) -> None:
+def _interactive_viewer_urwid(
+    rows: list[sqlite3.Row], conn: sqlite3.Connection, args: argparse.Namespace
+) -> None:
     """urwid-based interactive traffic viewer."""
     if urwid is None:
         raise RuntimeError("urwid not available")
@@ -978,6 +996,7 @@ def _interactive_viewer_urwid(rows: list[sqlite3.Row], conn: sqlite3.Connection,
 
 # ── Interactive curses viewer ─────────────────────────────────────────
 
+
 def _init_colors() -> None:
     global _COLOR_ENABLED
     _COLOR_ENABLED = False
@@ -986,14 +1005,14 @@ def _init_colors() -> None:
             return
         curses.start_color()
         curses.use_default_colors()
-        curses.init_pair(1, curses.COLOR_MAGENTA, -1)   # claude
-        curses.init_pair(2, curses.COLOR_CYAN, -1)      # copilot
-        curses.init_pair(3, curses.COLOR_GREEN, -1)     # codex
-        curses.init_pair(4, curses.COLOR_YELLOW, -1)    # gemini
-        curses.init_pair(5, curses.COLOR_RED, -1)       # error status
+        curses.init_pair(1, curses.COLOR_MAGENTA, -1)  # claude
+        curses.init_pair(2, curses.COLOR_CYAN, -1)  # copilot
+        curses.init_pair(3, curses.COLOR_GREEN, -1)  # codex
+        curses.init_pair(4, curses.COLOR_YELLOW, -1)  # gemini
+        curses.init_pair(5, curses.COLOR_RED, -1)  # error status
         curses.init_pair(6, curses.COLOR_WHITE, curses.COLOR_BLUE)  # selected row
-        curses.init_pair(7, curses.COLOR_WHITE, -1)     # header
-        curses.init_pair(8, curses.COLOR_GREEN, -1)     # rows with body data
+        curses.init_pair(7, curses.COLOR_WHITE, -1)  # header
+        curses.init_pair(8, curses.COLOR_GREEN, -1)  # rows with body data
         _COLOR_ENABLED = True
     except curses.error:
         _COLOR_ENABLED = False
@@ -1084,7 +1103,7 @@ def _draw_list(
         status_str = str(r["status"]) if r["status"] else "  -"
         host_display = r["host"][:21] if len(r["host"]) > 21 else r["host"]
         path_display = r["path"][:23] if len(r["path"]) > 23 else r["path"]
-        provider_display = (r["provider"] or "-")
+        provider_display = r["provider"] or "-"
         if len(provider_display) > 9:
             provider_display = provider_display[:8] + "…"
         api_marker = "●" if r["is_api"] else " "
@@ -1127,7 +1146,9 @@ def _draw_detail(
     lines = _detail_content_lines(row, width=max(24, width - 2), max_body_lines=200)
 
     # Title
-    title = f" Detail {index + 1}/{total}: #{row['id']} {row['method']} {row['host']}{row['path'][:28]}"
+    title = (
+        f" Detail {index + 1}/{total}: #{row['id']} {row['method']} {row['host']}{row['path'][:28]}"
+    )
     _addnstr_safe(stdscr, 0, 0, title.ljust(width)[:width], curses.A_BOLD | curses.A_REVERSE)
 
     # Content with scroll
@@ -1196,7 +1217,9 @@ def _read_key(stdscr: curses.window) -> int:
         stdscr.nodelay(False)
 
 
-def _interactive_viewer(rows: list[sqlite3.Row], conn: sqlite3.Connection, args: argparse.Namespace) -> None:
+def _interactive_viewer(
+    rows: list[sqlite3.Row], conn: sqlite3.Connection, args: argparse.Namespace
+) -> None:
     """Curses-based interactive traffic viewer."""
 
     # Mutable state for re-querying
@@ -1277,7 +1300,9 @@ def _interactive_viewer(rows: list[sqlite3.Row], conn: sqlite3.Connection, args:
             elif state["selected"] >= state["scroll_offset"] + list_height:
                 state["scroll_offset"] = state["selected"] - list_height + 1
 
-            _draw_list(stdscr, current_rows, state["selected"], state["scroll_offset"], _filter_label())
+            _draw_list(
+                stdscr, current_rows, state["selected"], state["scroll_offset"], _filter_label()
+            )
 
             key = _read_key(stdscr)
 
@@ -1314,11 +1339,15 @@ def _interactive_viewer(rows: list[sqlite3.Row], conn: sqlite3.Connection, args:
                         elif dk in (curses.KEY_UP, ord("k")):
                             detail_scroll = max(0, detail_scroll - 1)
                         elif dk in (curses.KEY_DOWN, ord("j")):
-                            detail_scroll = min(max(0, total_lines - (height - 2)), detail_scroll + 1)
+                            detail_scroll = min(
+                                max(0, total_lines - (height - 2)), detail_scroll + 1
+                            )
                         elif dk == curses.KEY_PPAGE:
                             detail_scroll = max(0, detail_scroll - (height - 3))
                         elif dk == curses.KEY_NPAGE:
-                            detail_scroll = min(max(0, total_lines - (height - 2)), detail_scroll + (height - 3))
+                            detail_scroll = min(
+                                max(0, total_lines - (height - 2)), detail_scroll + (height - 3)
+                            )
                         elif dk in (curses.KEY_LEFT, ord("h")):
                             if detail_idx > 0:
                                 detail_idx -= 1
@@ -1380,13 +1409,15 @@ def _interactive_viewer(rows: list[sqlite3.Row], conn: sqlite3.Connection, args:
 
 # ── CLI entry point ───────────────────────────────────────────────────
 
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ai-cli traffic",
         description="Browse and search proxied API traffic.",
     )
     parser.add_argument(
-        "--caller", "-c",
+        "--caller",
+        "-c",
         choices=["claude", "copilot", "codex", "gemini"],
         help="Filter by caller tool",
     )
@@ -1399,11 +1430,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Filter by provider (e.g. anthropic/openai/copilot/google)",
     )
     parser.add_argument(
-        "--search", "-s",
+        "--search",
+        "-s",
         help="Search in request/response bodies and paths",
     )
     parser.add_argument(
-        "--api", "-a",
+        "--api",
+        "-a",
         action="store_true",
         help="Show only confirmed API calls (with body content)",
     )
@@ -1414,7 +1447,8 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Sort order (default: time)",
     )
     parser.add_argument(
-        "--limit", "-n",
+        "--limit",
+        "-n",
         type=int,
         default=100,
         help="Maximum rows to show (default: 100)",
@@ -1426,13 +1460,15 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Path to traffic database",
     )
     parser.add_argument(
-        "--no-interactive", "--plain",
+        "--no-interactive",
+        "--plain",
         action="store_true",
         dest="plain",
         help="Plain text output (no curses)",
     )
     parser.add_argument(
-        "--detail", "-d",
+        "--detail",
+        "-d",
         type=int,
         metavar="ID",
         help="Show detail for a specific row ID",
@@ -1477,11 +1513,7 @@ def main(argv: list[str] | None = None) -> int:
     rows = conn.execute(query, params).fetchall()
 
     # Interactive or plain
-    use_interactive = (
-        not args.plain
-        and sys.stdin.isatty()
-        and sys.stdout.isatty()
-    )
+    use_interactive = not args.plain and sys.stdin.isatty() and sys.stdout.isatty()
 
     if use_interactive:
         used_interactive = False
@@ -1500,11 +1532,11 @@ def main(argv: list[str] | None = None) -> int:
         if not used_interactive:
             _print_table(rows)
             if rows:
-                print(f"\nUse 'ai-cli traffic --detail ID' to view full request/response.")
+                print("\nUse 'ai-cli traffic --detail ID' to view full request/response.")
     else:
         _print_table(rows)
         if rows:
-            print(f"\nUse 'ai-cli traffic --detail ID' to view full request/response.")
+            print("\nUse 'ai-cli traffic --detail ID' to view full request/response.")
 
     conn.close()
     return 0

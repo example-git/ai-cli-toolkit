@@ -9,7 +9,6 @@ from setuptools import setup
 from setuptools.command.build_py import build_py as _build_py
 from setuptools.command.develop import develop as _develop
 
-
 ROOT = Path(__file__).resolve().parent
 MUX_DIR = ROOT / "mux"
 MUX_TARGET = MUX_DIR / "target" / "release" / "ai-mux"

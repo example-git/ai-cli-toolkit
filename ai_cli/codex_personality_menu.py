@@ -16,7 +16,6 @@ from pathlib import Path
 from prompt_toolkit import prompt
 from prompt_toolkit.key_binding import KeyBindings
 
-
 _SECTION_HEADINGS_RE = re.compile(
     r"^#+\s*(Personality|Values|Interaction Style|Escalation)\s*$",
     re.MULTILINE | re.IGNORECASE,
@@ -46,9 +45,7 @@ def _resolve_defaults_file(path: Path) -> Path:
 
 
 def _lock_dir() -> Path:
-    return (
-        Path.home() / ".ai-cli" / "locks" / "codex-personality"
-    ).expanduser()
+    return (Path.home() / ".ai-cli" / "locks" / "codex-personality").expanduser()
 
 
 def _lock_path(target: Path) -> Path:
@@ -346,7 +343,7 @@ def main(argv: list[str] | None = None) -> int:
     base.add_argument("--window-name", required=True)
     base.add_argument("--tmux-socket")
 
-    open_parser = subparsers.add_parser("open", parents=[base])
+    subparsers.add_parser("open", parents=[base])
 
     menu_parser = subparsers.add_parser("menu", parents=[base])
     menu_parser.add_argument("--lock-file", required=True)

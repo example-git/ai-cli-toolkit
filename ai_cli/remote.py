@@ -16,12 +16,10 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, TextIO
+from typing import TextIO
 
 # Pattern: user@host:/path  or  user@host:path  (colon required to disambiguate)
-_REMOTE_RE = re.compile(
-    r"^(?P<user>[A-Za-z0-9._-]+)@(?P<host>[A-Za-z0-9._-]+):(?P<path>.+)$"
-)
+_REMOTE_RE = re.compile(r"^(?P<user>[A-Za-z0-9._-]+)@(?P<host>[A-Za-z0-9._-]+):(?P<path>.+)$")
 
 _SSH_OPTS = "ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new"
 
@@ -44,7 +42,7 @@ class RemoteSpec:
         return f"{self.user}@{self.host}:{self.path}"
 
 
-def parse_remote_spec(arg: str) -> Optional[RemoteSpec]:
+def parse_remote_spec(arg: str) -> RemoteSpec | None:
     """Parse a ``user@host:/path`` string. Returns *None* if not a remote spec."""
     m = _REMOTE_RE.match(arg.strip())
     if m is None:
@@ -76,6 +74,7 @@ def make_local_mirror(spec: RemoteSpec) -> Path:
 # rsync helpers
 # ---------------------------------------------------------------------------
 
+
 def _rsync_bin() -> str:
     path = shutil.which("rsync")
     if path is None:
@@ -97,7 +96,19 @@ def sync_down(spec: RemoteSpec, local_dir: Path) -> None:
     local_dir.mkdir(parents=True, exist_ok=True)
     src = f"{spec.ssh_target}:{spec.path.rstrip('/')}/"
     _run_rsync(
-        [_rsync_bin(), "-az", "--delete", "--ignore-existing", "--progress", "--exclude=conda/", "--exclude=runtime/tools/analytics/", "-e", _SSH_OPTS, src, str(local_dir) + "/"],
+        [
+            _rsync_bin(),
+            "-az",
+            "--delete",
+            "--ignore-existing",
+            "--progress",
+            "--exclude=conda/",
+            "--exclude=runtime/tools/analytics/",
+            "-e",
+            _SSH_OPTS,
+            src,
+            str(local_dir) + "/",
+        ],
         label="download",
     )
 
@@ -106,7 +117,19 @@ def sync_up(spec: RemoteSpec, local_dir: Path) -> None:
     """Push local changes back to remote via rsync."""
     dest = f"{spec.ssh_target}:{spec.path.rstrip('/')}/"
     _run_rsync(
-        [_rsync_bin(), "-az", "--delete", "--progress", "--ignore-existing", "--exclude=conda/", "--exclude=runtime/tools/analytics/", "-e", _SSH_OPTS, str(local_dir) + "/", dest],
+        [
+            _rsync_bin(),
+            "-az",
+            "--delete",
+            "--progress",
+            "--ignore-existing",
+            "--exclude=conda/",
+            "--exclude=runtime/tools/analytics/",
+            "-e",
+            _SSH_OPTS,
+            str(local_dir) + "/",
+            dest,
+        ],
         label="upload",
     )
 
@@ -115,12 +138,15 @@ def sync_up(spec: RemoteSpec, local_dir: Path) -> None:
 # Pre-flight checks
 # ---------------------------------------------------------------------------
 
+
 def verify_ssh(spec: RemoteSpec) -> None:
     """Quick SSH connectivity + remote dir existence check; raises on failure."""
     ssh_cmd = ["ssh"] + _SSH_OPTS.split()[1:] + [spec.ssh_target]
     # connectivity
     proc = subprocess.run(
-        [*ssh_cmd, "echo ok"], capture_output=True, text=True,
+        [*ssh_cmd, "echo ok"],
+        capture_output=True,
+        text=True,
     )
     if proc.returncode != 0:
         raise RuntimeError(
@@ -129,7 +155,9 @@ def verify_ssh(spec: RemoteSpec) -> None:
         )
     # directory exists
     proc = subprocess.run(
-        [*ssh_cmd, f"test -d {spec.path!r}"], capture_output=True, text=True,
+        [*ssh_cmd, f"test -d {spec.path!r}"],
+        capture_output=True,
+        text=True,
     )
     if proc.returncode != 0:
         raise RuntimeError(
@@ -149,8 +177,8 @@ def resolve_remote_tool_env(
 
     path_py = (
         "import os; "
-        "drop = os.path.join(os.environ[\"REAL_HOME\"], \".ai-cli/bin\"); "
-        "print(\":\".join(p for p in os.environ.get(\"PATH\", \"\").split(\":\") "
+        'drop = os.path.join(os.environ["REAL_HOME"], ".ai-cli/bin"); '
+        'print(":".join(p for p in os.environ.get("PATH", "").split(":") '
         "if p and p != drop))"
     )
     # Resolve tilde-prefixed binaries to $REAL_HOME and also try bare name
@@ -166,11 +194,11 @@ def resolve_remote_tool_env(
     # Try command -v on the bare name first; fall back to explicit tilde-expanded path
     if explicit_path:
         resolve_expr = (
-            f'_ai_cli_bin=$(command -v {bare_q} 2>/dev/null || true)'
+            f"_ai_cli_bin=$(command -v {bare_q} 2>/dev/null || true)"
             f' ; [ -z "$_ai_cli_bin" ] && [ -x {explicit_path} ] && _ai_cli_bin={explicit_path}'
         )
     else:
-        resolve_expr = f'_ai_cli_bin=$(command -v {bare_q} 2>/dev/null || true)'
+        resolve_expr = f"_ai_cli_bin=$(command -v {bare_q} 2>/dev/null || true)"
     remote_cmd = (
         f"export REAL_HOME={home_q}"
         " ; . /etc/profile 2>/dev/null"
@@ -186,7 +214,7 @@ def resolve_remote_tool_env(
         " ; unalias codex claude gemini copilot 2>/dev/null || true"
         " ; hash -r 2>/dev/null || true"
         f" ; {resolve_expr}"
-        " ; printf 'AI_CLI_REMOTE_PATH=%s\\nAI_CLI_REMOTE_BIN=%s\\n' \"$PATH\" \"$_ai_cli_bin\""
+        ' ; printf \'AI_CLI_REMOTE_PATH=%s\\nAI_CLI_REMOTE_BIN=%s\\n\' "$PATH" "$_ai_cli_bin"'
     )
     proc = subprocess.run(
         ["ssh", *_SSH_OPTS.split()[1:], spec.ssh_target, remote_cmd],
@@ -256,8 +284,7 @@ def install_remote_tool(
     )
     if proc.returncode != 0:
         raise RuntimeError(
-            f"Failed to install {tool_name} on {spec.ssh_target} "
-            f"(exit {proc.returncode})"
+            f"Failed to install {tool_name} on {spec.ssh_target} (exit {proc.returncode})"
         )
     print_sync_status(f"Installed {tool_name} on {spec.ssh_target}")
 
@@ -265,6 +292,7 @@ def install_remote_tool(
 # ---------------------------------------------------------------------------
 # Cleanup
 # ---------------------------------------------------------------------------
+
 
 def cleanup_mirror(spec: RemoteSpec) -> bool:
     """Remove the local mirror directory for a remote spec. Returns True if removed."""
@@ -284,6 +312,7 @@ def print_sync_status(msg: str, *, file: TextIO | None = None) -> None:
 # Remote Session Runner (uses remote-tty-wrapper)
 # ---------------------------------------------------------------------------
 
+
 def _find_remote_tty_wrapper() -> str:
     """Locate the bundled remote-tty-wrapper script."""
     bundled = Path(__file__).resolve().parent / "bin" / "remote-tty-wrapper"
@@ -292,11 +321,7 @@ def _find_remote_tty_wrapper() -> str:
     from_path = shutil.which("remote-tty-wrapper")
     if from_path:
         return from_path
-    raise FileNotFoundError(
-        "remote-tty-wrapper not found. Expected at:\n"
-        f"  {bundled}\n"
-        "or on PATH."
-    )
+    raise FileNotFoundError(f"remote-tty-wrapper not found. Expected at:\n  {bundled}\nor on PATH.")
 
 
 class RemoteSessionRunner:
@@ -310,7 +335,7 @@ class RemoteSessionRunner:
         self,
         spec: RemoteSpec,
         session_name: str = "ai-cli",
-        ssh_opts: Optional[list[str]] = None,
+        ssh_opts: list[str] | None = None,
     ) -> None:
         self.spec = spec
         self.session_name = session_name
@@ -328,12 +353,12 @@ class RemoteSessionRunner:
         cmd = self._base_cmd() + ["start"]
         if init_cmd:
             cmd += ["--init", init_cmd]
-        print_sync_status(f"Starting remote session '{self.session_name}' on {self.spec.ssh_target}")
+        print_sync_status(
+            f"Starting remote session '{self.session_name}' on {self.spec.ssh_target}"
+        )
         proc = subprocess.run(cmd, check=False)
         if proc.returncode != 0:
-            raise RuntimeError(
-                f"remote-tty-wrapper start failed (rc={proc.returncode})"
-            )
+            raise RuntimeError(f"remote-tty-wrapper start failed (rc={proc.returncode})")
 
     def send(self, *commands: str) -> None:
         """Send one or more command lines into the remote tmux session."""
@@ -347,9 +372,7 @@ class RemoteSessionRunner:
                 cmd += ["--", c]
         proc = subprocess.run(cmd, check=False)
         if proc.returncode != 0:
-            raise RuntimeError(
-                f"remote-tty-wrapper send failed (rc={proc.returncode})"
-            )
+            raise RuntimeError(f"remote-tty-wrapper send failed (rc={proc.returncode})")
 
     def shell(self, init_cmd: str = "") -> int:
         """Attach to the remote tmux session interactively. Returns exit code."""
@@ -371,17 +394,23 @@ class RemoteSessionRunner:
         # Ensure the remote directory exists, then scp the cert
         ssh_base = [
             "ssh",
-            "-o", "BatchMode=yes",
-            "-o", "ConnectTimeout=10",
-            "-o", "StrictHostKeyChecking=accept-new",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=10",
+            "-o",
+            "StrictHostKeyChecking=accept-new",
         ]
         subprocess.run(
             [*ssh_base, self.spec.ssh_target, "mkdir -p ~/.ai-cli"],
-            check=False, capture_output=True,
+            check=False,
+            capture_output=True,
         )
         proc = subprocess.run(
             ["scp", "-q", "-o", "BatchMode=yes", str(local_ca), dest],
-            check=False, capture_output=True, text=True,
+            check=False,
+            capture_output=True,
+            text=True,
         )
         if proc.returncode != 0:
             print_sync_status(f"Warning: failed to push CA cert: {proc.stderr.strip()}")
@@ -391,11 +420,11 @@ class RemoteSessionRunner:
         command: str,
         init_cmd: str = "",
         proxy_port: int = 0,
-        ca_path: Optional[Path] = None,
-        home_dir: Optional[str] = None,
-        real_home: Optional[str] = None,
-        launch_path: Optional[str] = None,
-        tmux_socket: Optional[str] = None,
+        ca_path: Path | None = None,
+        home_dir: str | None = None,
+        real_home: str | None = None,
+        launch_path: str | None = None,
+        tmux_socket: str | None = None,
     ) -> int:
         """Create a tmux session running *command* as the pane process, then attach.
 
@@ -443,8 +472,8 @@ class RemoteSessionRunner:
         else:
             shell_bootstrap += (
                 " ; export PATH=$(python3 -c 'import os; "
-                "drop = os.path.join(os.environ[\"REAL_HOME\"], \".ai-cli/bin\"); "
-                "print(\":\".join(p for p in os.environ.get(\"PATH\", \"\").split(\":\") "
+                'drop = os.path.join(os.environ["REAL_HOME"], ".ai-cli/bin"); '
+                'print(":".join(p for p in os.environ.get("PATH", "").split(":") '
                 "if p and p != drop))')"
             )
         shell_bootstrap += (
@@ -518,10 +547,14 @@ class RemoteSessionRunner:
         # ── SSH command ───────────────────────────────────────────────────
         ssh_cmd = [
             "ssh",
-            "-o", "PermitLocalCommand=no",
-            "-o", "ServerAliveInterval=30",
-            "-o", "ServerAliveCountMax=3",
-            "-o", "RequestTTY=force",
+            "-o",
+            "PermitLocalCommand=no",
+            "-o",
+            "ServerAliveInterval=30",
+            "-o",
+            "ServerAliveCountMax=3",
+            "-o",
+            "RequestTTY=force",
         ]
         # Reverse tunnel: remote port → local mitmproxy
         if proxy_port:
@@ -544,10 +577,10 @@ class RemoteSessionRunner:
         self,
         command: str,
         proxy_port: int = 0,
-        ca_path: Optional[Path] = None,
-        home_dir: Optional[str] = None,
-        real_home: Optional[str] = None,
-        launch_path: Optional[str] = None,
+        ca_path: Path | None = None,
+        home_dir: str | None = None,
+        real_home: str | None = None,
+        launch_path: str | None = None,
     ) -> int:
         """Run a command directly on the remote host in an attached SSH TTY."""
         import shlex as _shlex
@@ -604,10 +637,14 @@ class RemoteSessionRunner:
 
         ssh_cmd = [
             "ssh",
-            "-o", "PermitLocalCommand=no",
-            "-o", "ServerAliveInterval=30",
-            "-o", "ServerAliveCountMax=3",
-            "-o", "RequestTTY=force",
+            "-o",
+            "PermitLocalCommand=no",
+            "-o",
+            "ServerAliveInterval=30",
+            "-o",
+            "ServerAliveCountMax=3",
+            "-o",
+            "RequestTTY=force",
         ]
         if proxy_port:
             ssh_cmd += ["-R", f"127.0.0.1:{proxy_port}:127.0.0.1:{proxy_port}"]
@@ -641,10 +678,7 @@ class RemoteSessionRunner:
             return
 
         if session_home:
-            globs = [
-                f"{session_home.rstrip('/')}/{g.lstrip('~/')}"
-                for g in self._REMOTE_LOG_GLOBS
-            ]
+            globs = [f"{session_home.rstrip('/')}/{g.lstrip('~/')}" for g in self._REMOTE_LOG_GLOBS]
         else:
             globs = list(self._REMOTE_LOG_GLOBS)
 
@@ -655,9 +689,10 @@ class RemoteSessionRunner:
             dest = local_log_dir / f"remote-{self.spec.host}" / safe_name
             dest.mkdir(parents=True, exist_ok=True)
             proc = subprocess.run(
-                [rsync_bin, "-az", "--ignore-errors", "-e", ssh_str,
-                 src, str(dest) + "/"],
-                capture_output=True, text=True, check=False,
+                [rsync_bin, "-az", "--ignore-errors", "-e", ssh_str, src, str(dest) + "/"],
+                capture_output=True,
+                text=True,
+                check=False,
             )
             if proc.returncode == 0:
                 print_sync_status(f"Pulled {remote_glob} → {dest}")

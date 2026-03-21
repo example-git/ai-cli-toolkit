@@ -95,7 +95,9 @@ def _extract_metadata(payload: dict[str, Any]) -> dict[str, Any]:
     sub = _deep_find(payload, ("subscriptionType", "subscription_type"))
     if isinstance(sub, str) and sub:
         meta["subscriptionType"] = sub
-    tier = _deep_find(payload, ("rateLimitTier", "rate_limit_tier", "rateLimitTierName", "rate_limit_tier_name"))
+    tier = _deep_find(
+        payload, ("rateLimitTier", "rate_limit_tier", "rateLimitTierName", "rate_limit_tier_name")
+    )
     if isinstance(tier, str) and tier:
         meta["rateLimitTier"] = tier
     return meta
@@ -111,7 +113,12 @@ def _sub_from_profile(profile: dict[str, Any]) -> str | None:
     org_type = org.get("organization_type")
     if not isinstance(org_type, str):
         return None
-    return {"claude_max": "max", "claude_pro": "pro", "claude_enterprise": "enterprise", "claude_team": "team"}.get(org_type)
+    return {
+        "claude_max": "max",
+        "claude_pro": "pro",
+        "claude_enterprise": "enterprise",
+        "claude_team": "team",
+    }.get(org_type)
 
 
 def _read_creds() -> dict[str, Any]:
@@ -146,7 +153,10 @@ def _write_encrypted(data: dict[str, Any], log_file: str) -> None:
     try:
         proc = subprocess.run(
             [openssl, "enc", "-aes-256-cbc", "-pbkdf2", "-salt", "-a", "-pass", f"file:{key_path}"],
-            input=json.dumps(data), text=True, capture_output=True, check=False,
+            input=json.dumps(data),
+            text=True,
+            capture_output=True,
+            check=False,
         )
     except OSError:
         return
@@ -174,12 +184,18 @@ def _write_oauth(oauth: dict[str, Any], log_file: str) -> None:
         _log(log_file, f"Failed to save credentials: {exc}")
 
 
-def _build_oauth(bearer: str | None, existing: dict[str, Any] | None, meta: dict[str, Any] | None) -> dict[str, Any]:
+def _build_oauth(
+    bearer: str | None, existing: dict[str, Any] | None, meta: dict[str, Any] | None
+) -> dict[str, Any]:
     oauth = dict(existing or {})
     meta = meta or {}
     if bearer and not isinstance(oauth.get("accessToken"), str):
         oauth["accessToken"] = bearer
-    scopes = _parse_scopes(meta.get("scopes")) or _parse_scopes(oauth.get("scopes")) or [OAUTH_SCOPE_USER_INFERENCE]
+    scopes = (
+        _parse_scopes(meta.get("scopes"))
+        or _parse_scopes(oauth.get("scopes"))
+        or [OAUTH_SCOPE_USER_INFERENCE]
+    )
     if OAUTH_SCOPE_USER_INFERENCE not in scopes:
         scopes.append(OAUTH_SCOPE_USER_INFERENCE)
     oauth["scopes"] = scopes
@@ -218,8 +234,7 @@ class CredentialCaptureAddon:
     """Capture OAuth credentials from Claude API responses."""
 
     def load(self, loader: Any) -> None:
-        loader.add_option("wrapper_log_file", str, "",
-                          "Path to wrapper log file.")
+        loader.add_option("wrapper_log_file", str, "", "Path to wrapper log file.")
 
     def response(self, flow: http.HTTPFlow) -> None:
         log_file = getattr(ctx.options, "wrapper_log_file", "") or ""
@@ -229,10 +244,14 @@ class CredentialCaptureAddon:
         # Bootstrap: capture bearer token from any authenticated request
         existing_doc = _read_creds()
         existing_oauth = existing_doc.get("claudeAiOauth")
-        if not isinstance(existing_oauth, dict) or not isinstance(existing_oauth.get("accessToken"), str):
+        if not isinstance(existing_oauth, dict) or not isinstance(
+            existing_oauth.get("accessToken"), str
+        ):
             bearer = _extract_bearer(flow)
             if bearer:
-                oauth = _build_oauth(bearer, existing_oauth if isinstance(existing_oauth, dict) else {}, None)
+                oauth = _build_oauth(
+                    bearer, existing_oauth if isinstance(existing_oauth, dict) else {}, None
+                )
                 if isinstance(oauth.get("accessToken"), str):
                     _write_oauth(oauth, log_file)
 

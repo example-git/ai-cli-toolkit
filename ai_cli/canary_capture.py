@@ -13,7 +13,6 @@ Run via:  ai-cli canary-capture [tool ...]
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 import subprocess
 import sys
@@ -27,6 +26,7 @@ _CANARY_DIR = Path("~/.ai-cli")
 # ---------------------------------------------------------------------------
 # Per-model extractors
 # ---------------------------------------------------------------------------
+
 
 def _extract_claude(resp_body: str) -> dict[str, Any] | None:
     """Claude /v1/messages — looks for content[].type=thinking with a signature."""
@@ -106,20 +106,21 @@ def _extract_codex(resp_body: str) -> dict[str, Any] | None:
 _EXTRACTORS: dict[str, Any] = {
     "claude": _extract_claude,
     "gemini": _extract_gemini,
-    "codex":  _extract_codex,
+    "codex": _extract_codex,
 }
 
 # provider tag and path fragment to filter traffic rows per tool
 _TOOL_QUERY: dict[str, tuple[str, str]] = {
     "claude": ("anthropic", "/v1/messages"),
-    "gemini": ("google",    "generateContent"),
-    "codex":  ("openai",    "/backend-api/codex/responses"),
+    "gemini": ("google", "generateContent"),
+    "codex": ("openai", "/backend-api/codex/responses"),
 }
 
 
 # ---------------------------------------------------------------------------
 # Core scan logic
 # ---------------------------------------------------------------------------
+
 
 def scan_tool(
     tool: str,
@@ -178,7 +179,7 @@ _INSTRUCTIONS_FILE = Path("~/.ai-cli/canary-injection.md")
 _TOOL_PROMPT_FLAG: dict[str, list[str]] = {
     "claude": ["-p"],
     "gemini": ["-p"],
-    "codex":  [],   # positional
+    "codex": [],  # positional
 }
 
 _SEED_PROMPT_TEMPLATE = """\
@@ -199,8 +200,9 @@ def _build_seed_prompt(instructions_file: Path) -> str:
 
 
 def _tool_installed(tool: str) -> bool:
-    from ai_cli.tools import load_registry
     from ai_cli.config import ensure_config, get_tool_config
+    from ai_cli.tools import load_registry
+
     try:
         spec = load_registry().get(tool)
         if spec is None:
@@ -215,6 +217,7 @@ def _tool_installed(tool: str) -> bool:
 def _find_ai_cli_bin() -> str:
     """Return path to the ai-cli executable."""
     import shutil
+
     found = shutil.which("ai-cli") or shutil.which("ai_cli")
     if found:
         return found
@@ -271,11 +274,17 @@ def _run_seed_for_tool(
                 store.append(line)
                 print(f"  [{label}] {line}")
 
-        t_out = threading.Thread(target=_drain, args=(proc.stdout, lines_stdout, "out"), daemon=True)
-        t_err = threading.Thread(target=_drain, args=(proc.stderr, lines_stderr, "err"), daemon=True)
-        t_out.start(); t_err.start()
+        t_out = threading.Thread(
+            target=_drain, args=(proc.stdout, lines_stdout, "out"), daemon=True
+        )
+        t_err = threading.Thread(
+            target=_drain, args=(proc.stderr, lines_stderr, "err"), daemon=True
+        )
+        t_out.start()
+        t_err.start()
         rc = proc.wait()
-        t_out.join(timeout=5); t_err.join(timeout=5)
+        t_out.join(timeout=5)
+        t_err.join(timeout=5)
     except Exception as exc:
         rc = -1
         lines_stderr.append(str(exc))
@@ -301,6 +310,7 @@ def _run_seed_for_tool(
 # ---------------------------------------------------------------------------
 # CLI entry points
 # ---------------------------------------------------------------------------
+
 
 def cmd_canary_seed(args: list[str]) -> int:
     """Run a thinking-enabled one-shot session for each tool to populate the traffic DB,
@@ -328,8 +338,10 @@ def cmd_canary_seed(args: list[str]) -> int:
         # Auto-capture immediately after each session
         block = scan_tool(tool, db_path)
         if block is None:
-            print(f"[canary-seed] {tool}: no encrypted block captured — "
-                  "ensure thinking is enabled for the model")
+            print(
+                f"[canary-seed] {tool}: no encrypted block captured — "
+                "ensure thinking is enabled for the model"
+            )
         else:
             dest = save_canary_thought(tool, block, canary_dir)
             print(f"[canary-seed] {tool}: captured and saved → {dest}")
@@ -357,7 +369,7 @@ def cmd_canary_capture(args: list[str]) -> int:
 
         if block is None:
             print(f"{tool}: no encrypted thinking block found in traffic log")
-            print(f"  → Run a session with thinking enabled, then re-run canary-capture")
+            print("  → Run a session with thinking enabled, then re-run canary-capture")
             continue
 
         found_any = True

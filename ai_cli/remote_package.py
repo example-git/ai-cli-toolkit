@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 import shlex
 import shutil
@@ -21,7 +20,6 @@ import tempfile
 import textwrap
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Optional
 
 from ai_cli.instructions import ensure_project_instructions_file
 from ai_cli.remote import RemoteSpec, print_sync_status
@@ -72,8 +70,14 @@ _TOOL_PACKAGE_FILES: dict[str, list[tuple[str, str]]] = {
         ("~/.copilot/config.json", ".copilot/config.json"),
         ("~/.copilot/command-history-state.json", ".copilot/command-history-state.json"),
         ("~/.copilot/AGENTS.md", ".copilot/AGENTS.md"),
-        ("~/.copilot/agents/dev-instructions.agent.md", ".copilot/agents/dev-instructions.agent.md"),
-        ("~/.copilot/.system/.codex-system-skills.marker", ".copilot/.system/.codex-system-skills.marker"),
+        (
+            "~/.copilot/agents/dev-instructions.agent.md",
+            ".copilot/agents/dev-instructions.agent.md",
+        ),
+        (
+            "~/.copilot/.system/.codex-system-skills.marker",
+            ".copilot/.system/.codex-system-skills.marker",
+        ),
         ("~/.config/github-copilot/apps.json", ".config/github-copilot/apps.json"),
         ("~/.config/github-copilot/byok.json", ".config/github-copilot/byok.json"),
         ("~/.config/github-copilot/versions.json", ".config/github-copilot/versions.json"),
@@ -90,7 +94,10 @@ _TOOL_PACKAGE_FILES: dict[str, list[tuple[str, str]]] = {
         ("~/.gemini/trustedFolders.json", ".gemini/trustedFolders.json"),
         ("~/.gemini/antigravity/installation_id", ".gemini/antigravity/installation_id"),
         ("~/.gemini/antigravity/mcp_config.json", ".gemini/antigravity/mcp_config.json"),
-        ("~/.gemini/extensions/extension-enablement.json", ".gemini/extensions/extension-enablement.json"),
+        (
+            "~/.gemini/extensions/extension-enablement.json",
+            ".gemini/extensions/extension-enablement.json",
+        ),
         ("~/.gemini/policies/auto-saved.toml", ".gemini/policies/auto-saved.toml"),
     ],
 }
@@ -101,8 +108,8 @@ class PackageFileEntry:
     """One file to include in the remote package."""
 
     remote_rel_path: str  # relative to session dir (the fake $HOME)
-    local_path: Optional[Path] = None
-    content: Optional[str] = None
+    local_path: Path | None = None
+    content: str | None = None
 
 
 @dataclass(frozen=True)
@@ -163,9 +170,7 @@ def ensure_remote_ai_mux_asset(remote_spec: RemoteSpec) -> Path:
     asset_path = local_ai_mux_asset_path(system, machine)
 
     if (system, machine) != ("linux", "x86_64"):
-        raise RuntimeError(
-            f"No ai-mux asset available for remote target {system}/{machine}"
-        )
+        raise RuntimeError(f"No ai-mux asset available for remote target {system}/{machine}")
 
     rsync_bin = shutil.which("rsync")
     if not rsync_bin:
@@ -264,9 +269,7 @@ def compute_session_dir(tool_name: str, remote_spec: RemoteSpec) -> str:
     Deterministic: same tool + remote spec always gives the same path,
     allowing session reuse across invocations.
     """
-    digest = hashlib.sha256(
-        f"{tool_name}:{remote_spec.display}".encode()
-    ).hexdigest()[:12]
+    digest = hashlib.sha256(f"{tool_name}:{remote_spec.display}".encode()).hexdigest()[:12]
     return f"~/.ai-cli/remote-sessions/{tool_name}-{digest}"
 
 
@@ -277,15 +280,14 @@ def compute_tmux_socket(tool_name: str) -> str:
 
 def compute_session_name(tool_name: str, remote_spec: RemoteSpec) -> str:
     """Return the tmux session name (matches the directory basename)."""
-    digest = hashlib.sha256(
-        f"{tool_name}:{remote_spec.display}".encode()
-    ).hexdigest()[:12]
+    digest = hashlib.sha256(f"{tool_name}:{remote_spec.display}".encode()).hexdigest()[:12]
     return f"{tool_name}-{digest}"
 
 
 # ---------------------------------------------------------------------------
 # Manifest builder
 # ---------------------------------------------------------------------------
+
 
 def _add_if_exists(entries: list[PackageFileEntry], local: Path, rel: str) -> None:
     if (
@@ -473,12 +475,8 @@ def _render_tmux_editor_binding(key: str, window_name: str, editor_cmd: str) -> 
 def _render_tmux_conf(tool_name: str, remote_spec: RemoteSpec) -> str:
     script_expr = "$HOME/.ai-cli/bin/ai-prompt-editor"
     tmux_socket = compute_tmux_socket(tool_name)
-    edit_global_cmd = _render_editor_shell_cmd(
-        script_expr, tmux_socket, "edit-global", "global"
-    )
-    edit_base_cmd = _render_editor_shell_cmd(
-        script_expr, tmux_socket, "edit-base", "base"
-    )
+    edit_global_cmd = _render_editor_shell_cmd(script_expr, tmux_socket, "edit-global", "global")
+    edit_base_cmd = _render_editor_shell_cmd(script_expr, tmux_socket, "edit-base", "base")
     edit_tool_cmd = _render_editor_shell_cmd(
         script_expr,
         tmux_socket,
@@ -716,8 +714,8 @@ def build_package_manifest(
     tool_name: str,
     remote_spec: RemoteSpec,
     *,
-    ca_path: Optional[Path] = None,
-    ai_mux_binary: Optional[Path] = None,
+    ca_path: Path | None = None,
+    ai_mux_binary: Path | None = None,
 ) -> RemotePackage:
     """Build the file manifest for a remote tool session.
 
@@ -984,7 +982,7 @@ def reattach_remote_session(
     remote_spec: RemoteSpec,
     *,
     proxy_port: int = 0,
-    ssh_opts: Optional[list[str]] = None,
+    ssh_opts: list[str] | None = None,
 ) -> int:
     """Reattach to an existing remote tmux session.
 
@@ -995,21 +993,25 @@ def reattach_remote_session(
     conf_q = shlex.quote(f"{package.session_dir}/.tmux.conf")
     remote_cmd = (
         f"for c in $(tmux -L {sock_q} list-clients -t {sess_q} -F '#{{client_tty}}' 2>/dev/null); do "
-        f"tmux -L {sock_q} detach-client -t \"$c\" 2>/dev/null; done; "
+        f'tmux -L {sock_q} detach-client -t "$c" 2>/dev/null; done; '
         f"tmux -L {sock_q} source-file {conf_q} >/dev/null 2>&1; "
         f"tmux -L {sock_q} attach -t {sess_q}"
     )
 
     ssh_cmd = [
         "ssh",
-        "-o", "PermitLocalCommand=no",
-        "-o", "ServerAliveInterval=30",
-        "-o", "ServerAliveCountMax=3",
-        "-o", "RequestTTY=force",
+        "-o",
+        "PermitLocalCommand=no",
+        "-o",
+        "ServerAliveInterval=30",
+        "-o",
+        "ServerAliveCountMax=3",
+        "-o",
+        "RequestTTY=force",
     ]
     if proxy_port:
         ssh_cmd += ["-R", f"127.0.0.1:{proxy_port}:127.0.0.1:{proxy_port}"]
-    for opt in (ssh_opts or []):
+    for opt in ssh_opts or []:
         ssh_cmd.append(opt)
     ssh_cmd += [remote_spec.ssh_target, remote_cmd]
 

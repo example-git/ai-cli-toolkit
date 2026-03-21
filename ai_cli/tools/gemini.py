@@ -24,7 +24,7 @@ def _npx_wrapper_install(tag: str = "latest") -> str:
         f'PREFIX="{_GEMINI_PREFIX}" && '
         'BIN_DIR="$PREFIX/bin" && '
         'mkdir -p "$BIN_DIR" && '
-        'cat > "$BIN_DIR/gemini" << \'WRAPPER\'\n'
+        "cat > \"$BIN_DIR/gemini\" << 'WRAPPER'\n"
         "#!/usr/bin/env bash\n"
         f'exec npx --yes "{package}" "$@"\n'
         "WRAPPER\n"

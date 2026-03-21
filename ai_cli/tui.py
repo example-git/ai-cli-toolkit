@@ -14,7 +14,6 @@ from ai_cli.config import ensure_config, get_tool_config
 from ai_cli.instructions import resolve_instructions_file
 from ai_cli.tools import load_registry
 
-
 MenuAction = tuple[str, str]
 TmuxSessionRow = tuple[str, str, str, str]
 
@@ -94,8 +93,14 @@ def _fetch_tmux_sessions() -> list[TmuxSessionRow]:
     """Fetch active ai-cli tmux sessions."""
     try:
         result = subprocess.run(
-            ["tmux", "-L", "ai-mux", "list-sessions", "-F",
-             "#{session_name}\t#{session_windows}\t#{?session_attached,attached,detached}\t#{session_created_string}"],
+            [
+                "tmux",
+                "-L",
+                "ai-mux",
+                "list-sessions",
+                "-F",
+                "#{session_name}\t#{session_windows}\t#{?session_attached,attached,detached}\t#{session_created_string}",
+            ],
             capture_output=True,
             text=True,
         )
@@ -120,7 +125,13 @@ def _draw_tmux_picker(stdscr: curses.window, rows: list[TmuxSessionRow], selecte
     height, width = stdscr.getmaxyx()
     stdscr.addnstr(0, 2, "Active ai-cli tmux sessions", max(1, width - 4), curses.A_BOLD)
     stdscr.addnstr(1, 2, "Up/Down move, Enter attach, x kill selected, q cancel", max(1, width - 4))
-    stdscr.addnstr(3, 2, f"{'Session':<28} {'Windows':<7} {'State':<9} Created", max(1, width - 4), curses.A_DIM)
+    stdscr.addnstr(
+        3,
+        2,
+        f"{'Session':<28} {'Windows':<7} {'State':<9} Created",
+        max(1, width - 4),
+        curses.A_DIM,
+    )
     stdscr.addnstr(4, 2, "-" * max(1, min(80, width - 4)), max(1, width - 4), curses.A_DIM)
 
     start = 5
@@ -173,6 +184,7 @@ def _pick_tmux_session_curses(rows: list[TmuxSessionRow]) -> str | None:
                 continue
             if key in (10, 13, curses.KEY_ENTER):
                 return rows[selected][0]
+
     return curses.wrapper(_inner)
 
 
@@ -296,7 +308,7 @@ def _draw_menu(
 
     start_row = 5 + len(lines)
     visible = max(1, height - start_row - 1)
-    visible_actions = actions[top_index: top_index + visible]
+    visible_actions = actions[top_index : top_index + visible]
     for rel_idx, (label, _) in enumerate(visible_actions):
         idx = top_index + rel_idx
         row = start_row + rel_idx

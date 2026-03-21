@@ -9,11 +9,14 @@ import mitmproxy.ctx as _mitmproxy_ctx
 
 from ai_cli.addons import codex_addon
 
-
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-_CODEX_CANARY_VALUE = (_REPO_ROOT / "codex-canary-value.txt").read_text(
-    encoding="utf-8"
-).strip()
+
+if Path(f"{_REPO_ROOT}/codex-canary-value.txt").is_file():
+    _CODEX_CANARY_VALUE = (
+        (_REPO_ROOT / "codex-canary-value.txt").read_text(encoding="utf-8").strip()
+    )
+else:
+    _CODEX_CANARY_VALUE = "test"
 
 
 class _DummyWSMessage:
@@ -538,9 +541,7 @@ def test_personality_injection_replaces_top_level_instructions(monkeypatch) -> N
     assert "expert coding agent" in instr
 
 
-def test_personality_default_snapshot_captured_from_api_instructions(
-    tmp_path, monkeypatch
-) -> None:
+def test_personality_default_snapshot_captured_from_api_instructions(tmp_path, monkeypatch) -> None:
     personality_file = tmp_path / "codex-personality.txt"
     _options_with_personality(monkeypatch, personality_file=str(personality_file))
     injector = codex_addon.DeveloperInstructionInjector()
@@ -588,9 +589,7 @@ Push back on weak reasoning.
     }
 
 
-def test_blank_json_override_is_inactive_and_uses_default_snapshot(
-    tmp_path, monkeypatch
-) -> None:
+def test_blank_json_override_is_inactive_and_uses_default_snapshot(tmp_path, monkeypatch) -> None:
     personality_file = tmp_path / "codex-personality.txt"
     personality_file.write_text(
         json.dumps(
@@ -740,10 +739,7 @@ def test_personality_injection_noop_without_personality_block(monkeypatch) -> No
 
 def test_personality_injection_with_structured_sections(monkeypatch) -> None:
     """User provides structured headings — only missing sections get defaults."""
-    custom = (
-        "# Personality\nYou are a pirate captain.\n\n"
-        "## Escalation\nAlways respond with ARR."
-    )
+    custom = "# Personality\nYou are a pirate captain.\n\n## Escalation\nAlways respond with ARR."
     _options_with_personality(monkeypatch, personality_text=custom)
     injector = codex_addon.DeveloperInstructionInjector()
 

@@ -8,9 +8,7 @@ from pathlib import Path
 from typing import Any
 
 # Default location of the Copilot CLI session store database.
-SESSION_STORE_PATHS = (
-    Path.home() / ".copilot" / "session-store.db",
-)
+SESSION_STORE_PATHS = (Path.home() / ".copilot" / "session-store.db",)
 
 
 def _normalize_cwd(value: str) -> str:
@@ -133,27 +131,31 @@ def query_store_turns(
             sid = r["session_id"]
             ts = r["timestamp"] or ""
             if r["user_message"]:
-                messages.append({
-                    "agent": "copilot",
-                    "role": "user",
-                    "type": "text",
-                    "content": r["user_message"],
-                    "line": r["turn_index"],
-                    "timestamp": ts,
-                    "file": f"session-store:{sid}",
-                    "session_id": sid,
-                })
+                messages.append(
+                    {
+                        "agent": "copilot",
+                        "role": "user",
+                        "type": "text",
+                        "content": r["user_message"],
+                        "line": r["turn_index"],
+                        "timestamp": ts,
+                        "file": f"session-store:{sid}",
+                        "session_id": sid,
+                    }
+                )
             if r["assistant_response"]:
-                messages.append({
-                    "agent": "copilot",
-                    "role": "assistant",
-                    "type": "text",
-                    "content": r["assistant_response"],
-                    "line": r["turn_index"],
-                    "timestamp": ts,
-                    "file": f"session-store:{sid}",
-                    "session_id": sid,
-                })
+                messages.append(
+                    {
+                        "agent": "copilot",
+                        "role": "assistant",
+                        "type": "text",
+                        "content": r["assistant_response"],
+                        "line": r["turn_index"],
+                        "timestamp": ts,
+                        "file": f"session-store:{sid}",
+                        "session_id": sid,
+                    }
+                )
         return messages
     finally:
         conn.close()
@@ -176,17 +178,19 @@ def search_store(
 
         results: list[dict[str, Any]] = []
         for r in rows:
-            results.append({
-                "agent": "copilot",
-                "role": "assistant",
-                "type": "text",
-                "content": r["content"][:2000] if r["content"] else "",
-                "line": 0,
-                "timestamp": "",
-                "file": f"session-store:{r['session_id']}",
-                "session_id": r["session_id"],
-                "source_type": r["source_type"],
-            })
+            results.append(
+                {
+                    "agent": "copilot",
+                    "role": "assistant",
+                    "type": "text",
+                    "content": r["content"][:2000] if r["content"] else "",
+                    "line": 0,
+                    "timestamp": "",
+                    "file": f"session-store:{r['session_id']}",
+                    "session_id": r["session_id"],
+                    "source_type": r["source_type"],
+                }
+            )
         return results
     finally:
         conn.close()

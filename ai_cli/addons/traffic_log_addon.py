@@ -64,7 +64,12 @@ _REDACTION_PATTERNS = (
     # Authorization headers or bearer tokens.
     (re.compile(r"(?i)(authorization\\s*[:=]\\s*)(bearer\\s+)[^\\s\\\",]+"), r"\\1\\2[REDACTED]"),
     # JSON-style API key fields.
-    (re.compile(r'(?i)(\"(?:api[-_]?key|token|access_token|refresh_token|secret)\"\\s*:\\s*\")[^\"]+(\")'), r"\\1[REDACTED]\\2"),
+    (
+        re.compile(
+            r"(?i)(\"(?:api[-_]?key|token|access_token|refresh_token|secret)\"\\s*:\\s*\")[^\"]+(\")"
+        ),
+        r"\\1[REDACTED]\\2",
+    ),
     # Generic key=value secrets.
     (re.compile(r"(?i)\\b(api[-_]?key|token|secret|password)\\s*=\\s*[^\\s&]+"), r"\\1=[REDACTED]"),
 )
@@ -120,6 +125,7 @@ def _redact_text(value: str | None) -> str | None:
 
 
 # ── Database ──────────────────────────────────────────────────────────
+
 
 class _TrafficDB:
     """Thread-safe SQLite wrapper for the traffic log."""
@@ -254,8 +260,7 @@ class _TrafficDB:
         with self._lock:
             conn = self._ensure()
             conn.execute(
-                "UPDATE traffic SET status = ?, resp_bytes = ?, resp_body = ? "
-                "WHERE id = ?",
+                "UPDATE traffic SET status = ?, resp_bytes = ?, resp_body = ? WHERE id = ?",
                 (status, resp_bytes, resp_body, row_id),
             )
             conn.commit()
@@ -269,8 +274,7 @@ class _TrafficDB:
         if row and row[0] > self._max_rows:
             excess = row[0] - self._max_rows + max(self._max_rows // 10, 50)
             conn.execute(
-                "DELETE FROM traffic WHERE id IN "
-                "(SELECT id FROM traffic ORDER BY id ASC LIMIT ?)",
+                "DELETE FROM traffic WHERE id IN (SELECT id FROM traffic ORDER BY id ASC LIMIT ?)",
                 (excess,),
             )
         conn.commit()
@@ -298,28 +302,39 @@ if True:  # always define for mitmproxy module loading
 
         def load(self, loader: Any) -> None:
             loader.add_option(
-                "traffic_db", str,
+                "traffic_db",
+                str,
                 str(_DEFAULT_DB_DIR / _DEFAULT_DB_NAME),
                 "Path to SQLite traffic log database.",
             )
             loader.add_option(
-                "traffic_max_rows", int, _DEFAULT_MAX_ROWS,
+                "traffic_max_rows",
+                int,
+                _DEFAULT_MAX_ROWS,
                 "Maximum rows to keep in the traffic log (rolling).",
             )
             loader.add_option(
-                "traffic_body_cap", int, 64_000,
+                "traffic_body_cap",
+                int,
+                64_000,
                 "Max characters of body content to store per API request.",
             )
             loader.add_option(
-                "traffic_caller", str, "",
+                "traffic_caller",
+                str,
+                "",
                 "Caller tool name (claude, copilot, codex, gemini).",
             )
             loader.add_option(
-                "traffic_max_age_days", int, _DEFAULT_MAX_AGE_DAYS,
+                "traffic_max_age_days",
+                int,
+                _DEFAULT_MAX_AGE_DAYS,
                 "Maximum age in days to retain traffic rows.",
             )
             loader.add_option(
-                "traffic_redact", bool, True,
+                "traffic_redact",
+                bool,
+                True,
                 "Redact common secret-like values in captured bodies.",
             )
 

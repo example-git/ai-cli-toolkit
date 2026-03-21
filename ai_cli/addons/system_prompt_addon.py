@@ -193,7 +193,11 @@ def _extract_received_prompts_from_obj(
     model = str(obj.get("model") or model_hint or "")
     out: list[tuple[str, str, str]] = []
 
-    for key, role in (("instructions", "instructions"), ("system", "system"), ("developer", "developer")):
+    for key, role in (
+        ("instructions", "instructions"),
+        ("system", "system"),
+        ("developer", "developer"),
+    ):
         text = _text_from_value(obj.get(key))
         if text:
             out.append((model, f"{role}{_RECV_ROLE_SUFFIX}", text))
@@ -318,7 +322,9 @@ class _PromptDB:
         try:
             conn.execute("SELECT role FROM system_prompts LIMIT 0")
         except sqlite3.OperationalError:
-            conn.execute("ALTER TABLE system_prompts ADD COLUMN role TEXT NOT NULL DEFAULT 'system'")
+            conn.execute(
+                "ALTER TABLE system_prompts ADD COLUMN role TEXT NOT NULL DEFAULT 'system'"
+            )
         conn.commit()
         self._conn = conn
         return conn
@@ -392,8 +398,7 @@ if True:  # always define for mitmproxy module loading
         def _ensure_db(self) -> _PromptDB:
             if self._db is None:
                 db_path = Path(
-                    getattr(ctx.options, "prompt_db", "")
-                    or str(_DEFAULT_DB_DIR / _DEFAULT_DB_NAME)
+                    getattr(ctx.options, "prompt_db", "") or str(_DEFAULT_DB_DIR / _DEFAULT_DB_NAME)
                 )
                 self._db = _PromptDB(db_path)
             return self._db

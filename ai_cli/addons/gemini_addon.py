@@ -159,8 +159,7 @@ def _inject_canary_thinking_turn(container: dict[str, Any], thought_part: dict[s
             ):
                 return False
     first_user_idx = next(
-        (i for i, c in enumerate(contents)
-         if isinstance(c, dict) and c.get("role") == "user"),
+        (i for i, c in enumerate(contents) if isinstance(c, dict) and c.get("role") == "user"),
         None,
     )
     if first_user_idx is None:
@@ -217,18 +216,29 @@ class GeminiSystemInstructionInjector:
 
     def load(self, loader: Any) -> None:
         register_prompt_options(loader)
-        loader.add_option("target_path", str, "/v1beta/models,/v1alpha/models,/v1/models,/v1internal:",
-                          "Only inject for request paths containing this value.")
-        loader.add_option("wrapper_log_file", str, "",
-                          "Path to wrapper log file for addon diagnostics.")
-        loader.add_option("passthrough", bool, False,
-                          "Passthrough mode - no injection.")
-        loader.add_option("debug_requests", bool, False,
-                          "Log full request bodies for debugging.")
-        loader.add_option("developer_instructions_mode", str, "overwrite",
-                  "Instruction merge mode: overwrite|append|prepend.")
-        loader.add_option("gemini_canary_thought_injection_enabled", bool, True,
-                          "Compatibility shim for older wrapper builds.")
+        loader.add_option(
+            "target_path",
+            str,
+            "/v1beta/models,/v1alpha/models,/v1/models,/v1internal:",
+            "Only inject for request paths containing this value.",
+        )
+        loader.add_option(
+            "wrapper_log_file", str, "", "Path to wrapper log file for addon diagnostics."
+        )
+        loader.add_option("passthrough", bool, False, "Passthrough mode - no injection.")
+        loader.add_option("debug_requests", bool, False, "Log full request bodies for debugging.")
+        loader.add_option(
+            "developer_instructions_mode",
+            str,
+            "overwrite",
+            "Instruction merge mode: overwrite|append|prepend.",
+        )
+        loader.add_option(
+            "gemini_canary_thought_injection_enabled",
+            bool,
+            True,
+            "Compatibility shim for older wrapper builds.",
+        )
 
     @staticmethod
     def _already_injected(system_instruction: dict[str, Any], text: str) -> bool:
@@ -245,9 +255,12 @@ class GeminiSystemInstructionInjector:
             return
 
         path = flow.request.path or ""
-        target = getattr(
-            ctx.options, "target_path", "/v1beta/models,/v1alpha/models,/v1/models,/v1internal:"
-        ) or ""
+        target = (
+            getattr(
+                ctx.options, "target_path", "/v1beta/models,/v1alpha/models,/v1/models,/v1internal:"
+            )
+            or ""
+        )
         if not _path_matches_target(path, target):
             return
         # Only match generate/stream generateContent endpoints.
@@ -345,9 +358,12 @@ class GeminiSystemInstructionInjector:
 
     def response(self, flow: http.HTTPFlow) -> None:
         path = flow.request.path or ""
-        target = getattr(
-            ctx.options, "target_path", "/v1beta/models,/v1alpha/models,/v1/models,/v1internal:"
-        ) or ""
+        target = (
+            getattr(
+                ctx.options, "target_path", "/v1beta/models,/v1alpha/models,/v1/models,/v1internal:"
+            )
+            or ""
+        )
         if not _path_matches_target(path, target):
             return
         if not _is_generate_content_path(path):

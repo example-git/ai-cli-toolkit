@@ -35,6 +35,7 @@ PROJECT_PROMPT_META_FILENAME = "meta.json"
 # Low-level helpers
 # ---------------------------------------------------------------------------
 
+
 def _read_text(path: Path) -> str:
     """Read a text file, returning empty string on error."""
     try:
@@ -77,10 +78,13 @@ def resolve_project_prompt_dir(project_cwd: str = "", remote_spec: str = "") -> 
 
 
 def resolve_project_prompt_path(project_cwd: str = "", remote_spec: str = "") -> Path:
-    return resolve_project_prompt_dir(
-        project_cwd=project_cwd,
-        remote_spec=remote_spec,
-    ) / PROJECT_PROMPT_FILENAME
+    return (
+        resolve_project_prompt_dir(
+            project_cwd=project_cwd,
+            remote_spec=remote_spec,
+        )
+        / PROJECT_PROMPT_FILENAME
+    )
 
 
 def _legacy_project_instructions_path(project_cwd: str = "") -> Path:
@@ -113,6 +117,7 @@ def ensure_project_instructions_file(project_cwd: str = "", remote_spec: str = "
 # ---------------------------------------------------------------------------
 # Instruction resolution
 # ---------------------------------------------------------------------------
+
 
 def resolve_base_instructions() -> str:
     """Load the generic base instructions template.
@@ -180,9 +185,7 @@ def resolve_instructions_file(path_value: str = "") -> str:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("", encoding="utf-8")
         except OSError as exc:
-            raise OSError(
-                f"Could not create instructions file at {path}: {exc}"
-            ) from exc
+            raise OSError(f"Could not create instructions file at {path}: {exc}") from exc
 
     return str(path)
 
@@ -190,6 +193,7 @@ def resolve_instructions_file(path_value: str = "") -> str:
 # ---------------------------------------------------------------------------
 # Composition
 # ---------------------------------------------------------------------------
+
 
 def compose_instructions(
     canary_rule: str = DEFAULT_CANARY_RULE,
@@ -279,6 +283,7 @@ def resolve_base_system_text(
 # Editor launch
 # ---------------------------------------------------------------------------
 
+
 def edit_instructions(instructions_file: str = "") -> int:
     """Open the instructions file in the user's editor.
 
@@ -296,6 +301,7 @@ def edit_instructions(instructions_file: str = "") -> int:
 
     if not editor:
         import sys
+
         print(
             f"No editor found. Set $VISUAL or $EDITOR, or edit manually: {path}",
             file=sys.stderr,

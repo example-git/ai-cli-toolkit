@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 
-from ai_cli import codex_personality_menu
 from prompt_toolkit.keys import Keys
+
+from ai_cli import codex_personality_menu
 
 
 def test_load_existing_sections_reads_json_payload(tmp_path) -> None:

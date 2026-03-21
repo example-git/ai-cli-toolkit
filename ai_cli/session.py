@@ -15,19 +15,30 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable
 
 from ai_cli.session_store import (
     StoreSession,
+)
+from ai_cli.session_store import (
     find_session_store_db as _find_session_store_db,
+)
+from ai_cli.session_store import (
     list_store_sessions as _list_store_sessions_sql,
+)
+from ai_cli.session_store import (
     query_store_checkpoints as _query_store_checkpoints_sql,
+)
+from ai_cli.session_store import (
     query_store_files as _query_store_files_sql,
+)
+from ai_cli.session_store import (
     query_store_turns as _query_store_turns_sql,
+)
+from ai_cli.session_store import (
     search_store as _search_store_sql,
 )
 from ai_cli.traffic_db import DEFAULT_DB_PATH as TRAFFIC_DB_PATH
-
 
 AGENTS = ("claude", "codex", "copilot", "gemini")
 
@@ -41,7 +52,8 @@ except (AttributeError, ValueError):
 # Session store (SQLite) querying — the "sql way"
 # ---------------------------------------------------------------------------
 
-def find_session_store_db(path: str = "") -> Optional[Path]:
+
+def find_session_store_db(path: str = "") -> Path | None:
     return _find_session_store_db(path)
 
 
@@ -107,7 +119,9 @@ def parse_gemini_api_body(body_text: str, role_default: str = "user") -> list[st
             if line.startswith("data: "):
                 try:
                     data = json.loads(line[6:])
-                    sse_out.extend(parse_gemini_api_body(json.dumps(data), role_default="assistant"))
+                    sse_out.extend(
+                        parse_gemini_api_body(json.dumps(data), role_default="assistant")
+                    )
                 except json.JSONDecodeError:
                     pass
         return sse_out
@@ -170,6 +184,7 @@ def query_traffic_turns(
         return []
 
     import sqlite3
+
     provider_map = {"gemini": "google", "claude": "anthropic", "openai": "openai"}
     provider = provider_map.get(agent, agent)
 
@@ -194,29 +209,33 @@ def query_traffic_turns(
             if r["req_body"]:
                 texts = parse_gemini_api_body(r["req_body"], role_default="user")
                 for t in texts:
-                    turns.append({
-                        "agent": agent,
-                        "role": "user",
-                        "type": "text",
-                        "content": t,
-                        "timestamp": ts,
-                        "file": f"traffic.db:{rid}",
-                        "line": rid,
-                    })
+                    turns.append(
+                        {
+                            "agent": agent,
+                            "role": "user",
+                            "type": "text",
+                            "content": t,
+                            "timestamp": ts,
+                            "file": f"traffic.db:{rid}",
+                            "line": rid,
+                        }
+                    )
 
             # Response -> Assistant
             if r["resp_body"]:
                 texts = parse_gemini_api_body(r["resp_body"], role_default="assistant")
                 for t in texts:
-                    turns.append({
-                        "agent": agent,
-                        "role": "assistant",
-                        "type": "text",
-                        "content": t,
-                        "timestamp": ts,
-                        "file": f"traffic.db:{rid}",
-                        "line": rid,
-                    })
+                    turns.append(
+                        {
+                            "agent": agent,
+                            "role": "assistant",
+                            "type": "text",
+                            "content": t,
+                            "timestamp": ts,
+                            "file": f"traffic.db:{rid}",
+                            "line": rid,
+                        }
+                    )
     except Exception:
         pass
 
@@ -431,15 +450,17 @@ def parse_gemini_chat_json(path: Path) -> list[dict[str, Any]]:
         if not text:
             continue
 
-        messages.append({
-            "agent": "gemini",
-            "role": role,
-            "type": "text",
-            "content": text,
-            "line": idx,
-            "timestamp": ts,
-            "file": str(path),
-        })
+        messages.append(
+            {
+                "agent": "gemini",
+                "role": role,
+                "type": "text",
+                "content": text,
+                "line": idx,
+                "timestamp": ts,
+                "file": str(path),
+            }
+        )
 
     return messages
 
@@ -472,10 +493,7 @@ def discover_sessions(
             return [SessionFile(agent=forced_agent, path=path)]
         if path.is_dir() and any(path.glob("*.jsonl")):
             forced_agent = agent if agent in AGENTS else infer_agent_from_path(path)
-            return [
-                SessionFile(agent=forced_agent, path=p)
-                for p in path.glob("*.jsonl")
-            ]
+            return [SessionFile(agent=forced_agent, path=p) for p in path.glob("*.jsonl")]
 
     agents = AGENTS if agent == "all" else (agent,)
     files: list[SessionFile] = []
@@ -533,7 +551,7 @@ def infer_session_cwd(path: Path, max_lines: int = 150) -> str:
                     if match:
                         val = match.group(1)
                         if val.startswith("/") or "~" in val:
-                             return _normalize_cwd(_decode_json_string(val))
+                            return _normalize_cwd(_decode_json_string(val))
 
             # Deeper scan if line-by-line failed
             for pattern in _CWD_PATTERNS:
@@ -640,7 +658,9 @@ def build_recent_context_for_cwd(
     if db_path:
         try:
             store_sessions = list_store_sessions(
-                db_path, cwd=_normalize_cwd(working_cwd), limit=max_sessions,
+                db_path,
+                cwd=_normalize_cwd(working_cwd),
+                limit=max_sessions,
             )
             for ss in store_sessions:
                 if ss.summary:
@@ -679,7 +699,9 @@ def build_recent_context_for_cwd(
     # ── Traffic log (Gemini) extraction ──────────────────────────────
     if not remote_host.strip() and TRAFFIC_DB_PATH.is_file():
         try:
-            traffic_turns = query_traffic_turns(TRAFFIC_DB_PATH, agent="gemini", limit=max_messages * 2)
+            traffic_turns = query_traffic_turns(
+                TRAFFIC_DB_PATH, agent="gemini", limit=max_messages * 2
+            )
             # Since traffic log doesn't store CWD per row, we take recent ones.
             # We filter for candidates.
             for turn in traffic_turns:
@@ -724,9 +746,7 @@ def build_recent_context_for_cwd(
         seen_line.add(line)
         lines.append(line)
 
-    lines.append(
-        "Use this as continuity context only; prioritize current user instructions."
-    )
+    lines.append("Use this as continuity context only; prioritize current user instructions.")
     return "\n".join(lines)
 
 
@@ -808,9 +828,7 @@ def parse_claude_jsonl(path: Path, show_tools: bool = False) -> list[dict[str, A
                 continue
 
             timestamp = _normalize_timestamp(
-                obj.get("timestamp")
-                or obj.get("created_at")
-                or obj.get("time")
+                obj.get("timestamp") or obj.get("created_at") or obj.get("time")
             )
 
             entry_type = obj.get("type", "")
@@ -875,7 +893,9 @@ def parse_claude_jsonl(path: Path, show_tools: bool = False) -> list[dict[str, A
                             ):
                                 if key in inp:
                                     summary_parts.append(f"{key}={str(inp[key])[:120]}")
-                        summary = (", ".join(summary_parts) if summary_parts else json.dumps(inp)[:200])
+                        summary = (
+                            ", ".join(summary_parts) if summary_parts else json.dumps(inp)[:200]
+                        )
                         messages.append(
                             {
                                 "agent": "claude",
@@ -930,10 +950,7 @@ def parse_generic_jsonl(
                 continue
 
             timestamp = _normalize_timestamp(
-                obj.get("timestamp")
-                or obj.get("created_at")
-                or obj.get("time")
-                or obj.get("ts")
+                obj.get("timestamp") or obj.get("created_at") or obj.get("time") or obj.get("ts")
             )
 
             entry_type = str(obj.get("type", "")).lower()
@@ -1059,7 +1076,7 @@ def _list_sessions(sessions: Iterable[SessionFile]) -> int:
     return 0
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Browse conversation history across Claude, Codex, Copilot, and Gemini.",
     )
@@ -1152,10 +1169,20 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     # ── SQL mode ──────────────────────────────────────────────────────
-    if args.sql or args.search or args.session_id or args.db or args.checkpoints or args.files is not None:
+    if (
+        args.sql
+        or args.search
+        or args.session_id
+        or args.db
+        or args.checkpoints
+        or args.files is not None
+    ):
         db_path = find_session_store_db(args.db)
         if db_path is None:
-            print("Session store database not found. Pass --db or ensure ~/.copilot/session-store.db exists.", file=sys.stderr)
+            print(
+                "Session store database not found. Pass --db or ensure ~/.copilot/session-store.db exists.",
+                file=sys.stderr,
+            )
             return 1
 
         # FTS5 search
@@ -1193,7 +1220,9 @@ def main(argv: Optional[list[str]] = None) -> int:
                 print("No checkpoints found.", file=sys.stderr)
                 return 0
             print(f"Session store: {db_path}", file=sys.stderr)
-            print(f"{len(cps)} checkpoint(s) for session {args.session_id[:12]}...", file=sys.stderr)
+            print(
+                f"{len(cps)} checkpoint(s) for session {args.session_id[:12]}...", file=sys.stderr
+            )
             print("---", file=sys.stderr)
             try:
                 for cp in cps:
@@ -1241,13 +1270,17 @@ def main(argv: Optional[list[str]] = None) -> int:
             if args.target:
                 cwd_filter = _normalize_cwd(args.target)
             sessions_list = list_store_sessions(
-                db_path, cwd=cwd_filter, limit=args.tail or 50,
+                db_path,
+                cwd=cwd_filter,
+                limit=args.tail or 50,
             )
             return _list_store_sessions(db_path, sessions_list)
 
         # Show turns for a specific session
         messages = query_store_turns(
-            db_path, session_id=args.session_id, grep=args.grep,
+            db_path,
+            session_id=args.session_id,
+            grep=args.grep,
             limit=args.tail or 200,
         )
         if not messages:
@@ -1255,7 +1288,10 @@ def main(argv: Optional[list[str]] = None) -> int:
             return 0
 
         print(f"Session store: {db_path}", file=sys.stderr)
-        print(f"Showing {len(messages)} message(s) for session {args.session_id[:12]}...", file=sys.stderr)
+        print(
+            f"Showing {len(messages)} message(s) for session {args.session_id[:12]}...",
+            file=sys.stderr,
+        )
         print("---", file=sys.stderr)
         try:
             for message in messages:
@@ -1293,7 +1329,9 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     # ── Gemini traffic log integration ──────────────────────────────
     if args.agent in ("all", "gemini"):
-        traffic_messages = query_traffic_turns(TRAFFIC_DB_PATH, agent="gemini", limit=args.tail or 50)
+        traffic_messages = query_traffic_turns(
+            TRAFFIC_DB_PATH, agent="gemini", limit=args.tail or 50
+        )
         parsed_messages.extend(traffic_messages)
 
     if args.all or args.agent in ("all", "gemini"):

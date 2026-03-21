@@ -8,11 +8,14 @@ import mitmproxy.ctx as _mitmproxy_ctx
 
 from ai_cli.addons import claude_addon
 
-
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-_CLAUDE_CANARY_SIGNATURE = (_REPO_ROOT / "claude-canary-value.txt").read_text(
-    encoding="utf-8"
-).strip()
+
+if Path(f"{_REPO_ROOT}/claude-canary-value.txt").is_file():
+    _CLAUDE_CANARY_SIGNATURE = (
+        (_REPO_ROOT / "claude-canary-value.txt").read_text(encoding="utf-8").strip()
+    )
+else:
+    _CLAUDE_CANARY_SIGNATURE = "test"
 
 
 class _DummyRequest:

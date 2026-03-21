@@ -45,7 +45,7 @@ class ToolSpec:
     instructions_label: str = "system"
     """What injection is called for this tool: 'system' or 'developer'."""
 
-    install_command: Optional[str] = None
+    install_command: str | None = None
     """Shell command to install or update this tool (default/preferred method)."""
 
     install_methods: dict[str, str] = field(default_factory=dict)
@@ -54,16 +54,16 @@ class ToolSpec:
     preferred_methods: list[str] = field(default_factory=list)
     """Ordered preference for install methods (first available wins)."""
 
-    version_command: Optional[list[str]] = None
+    version_command: list[str] | None = None
     """Command list to get the tool's version string."""
 
     extra_env: dict[str, str] = field(default_factory=dict)
     """Additional environment variables to set when launching the tool."""
 
-    app_binary: Optional[str] = None
+    app_binary: str | None = None
     """macOS .app binary path — used as fallback when the CLI binary is not on PATH."""
 
-    managed_binary: Optional[str] = None
+    managed_binary: str | None = None
     """ai-cli-managed binary path to persist after install, if applicable."""
 
     # Map of method names to the binary they require on PATH
@@ -85,7 +85,7 @@ class ToolSpec:
             "curl": "curl",
         }
 
-    def detect_best_method(self) -> Optional[str]:
+    def detect_best_method(self) -> str | None:
         """Pick the first preferred method whose prerequisite binary exists."""
         order = self.preferred_methods or list(self.install_methods.keys())
         for method in order:
@@ -94,7 +94,7 @@ class ToolSpec:
                 return method
         return None
 
-    def get_install_command(self, method: Optional[str] = None) -> Optional[str]:
+    def get_install_command(self, method: str | None = None) -> str | None:
         """Return install command for the given method, auto-detect, or default."""
         if method and method in self.install_methods:
             return self.install_methods[method]
@@ -116,17 +116,17 @@ class ToolSpec:
         symlink is never mistaken for the real tool binary.
         """
         import os
+
         alias_dir = str(Path("~/.ai-cli/bin").expanduser())
         clean_path = os.pathsep.join(
-            d for d in os.environ.get("PATH", "").split(os.pathsep)
-            if d != alias_dir
+            d for d in os.environ.get("PATH", "").split(os.pathsep) if d != alias_dir
         )
         binary = self.resolve_binary(configured_binary)
         if shutil.which(binary, path=clean_path) is not None:
             return True
         return Path(binary).is_file()
 
-    def get_version(self, configured_binary: str = "") -> Optional[str]:
+    def get_version(self, configured_binary: str = "") -> str | None:
         """Run version_command and return version string, or None.
 
         Resolves the binary from *configured_binary* (or default) and
@@ -144,15 +144,19 @@ class ToolSpec:
         # Build an env with the alias dir stripped so shutil/subprocess
         # never pick up the ai-cli symlink.
         import os
+
         alias_dir = str(Path("~/.ai-cli/bin").expanduser())
         env = os.environ.copy()
-        path_dirs = [d for d in env.get("PATH", "").split(os.pathsep)
-                     if d != alias_dir]
+        path_dirs = [d for d in env.get("PATH", "").split(os.pathsep) if d != alias_dir]
         env["PATH"] = os.pathsep.join(path_dirs)
         try:
             result = subprocess.run(
-                cmd, capture_output=True, text=True, check=False,
-                timeout=10, env=env,
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=10,
+                env=env,
             )
             if result.returncode == 0:
                 return result.stdout.strip()
@@ -162,9 +166,7 @@ class ToolSpec:
 
     def addon_path(self) -> str:
         """Return the full path to this tool's addon script."""
-        return str(
-            Path(__file__).resolve().parent.parent / "addons" / self.addon_script
-        )
+        return str(Path(__file__).resolve().parent.parent / "addons" / self.addon_script)
 
 
 # ---------------------------------------------------------------------------

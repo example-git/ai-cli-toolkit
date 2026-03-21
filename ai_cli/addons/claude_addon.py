@@ -185,16 +185,27 @@ if True:  # always define — mitmproxy loads this as a module
 
         def load(self, loader: Any) -> None:
             register_prompt_options(loader)
-            loader.add_option("target_path", str, "/v1/messages",
-                              "Only inject for request paths containing this value.")
-            loader.add_option("wrapper_log_file", str, "",
-                              "Path to wrapper log file for addon diagnostics.")
-            loader.add_option("passthrough", bool, False,
-                              "Passthrough mode - no injection, just log requests.")
-            loader.add_option("debug_requests", bool, False,
-                              "Log full request bodies for debugging.")
-            loader.add_option("developer_instructions_mode", str, "overwrite",
-                              "Instruction merge mode: overwrite|append|prepend.")
+            loader.add_option(
+                "target_path",
+                str,
+                "/v1/messages",
+                "Only inject for request paths containing this value.",
+            )
+            loader.add_option(
+                "wrapper_log_file", str, "", "Path to wrapper log file for addon diagnostics."
+            )
+            loader.add_option(
+                "passthrough", bool, False, "Passthrough mode - no injection, just log requests."
+            )
+            loader.add_option(
+                "debug_requests", bool, False, "Log full request bodies for debugging."
+            )
+            loader.add_option(
+                "developer_instructions_mode",
+                str,
+                "overwrite",
+                "Instruction merge mode: overwrite|append|prepend.",
+            )
 
         def request(self, flow: http.HTTPFlow) -> None:
             if flow.request.method.upper() != "POST":
@@ -213,7 +224,10 @@ if True:  # always define — mitmproxy loads this as a module
                 getattr(ctx.options, "developer_instructions_mode", "overwrite") or "overwrite"
             )
 
-            log(log_file, f"Addon saw request: method={flow.request.method} path={flow.request.path}")
+            log(
+                log_file,
+                f"Addon saw request: method={flow.request.method} path={flow.request.path}",
+            )
 
             body_text = flow.request.get_text(strict=False)
             if not body_text:
@@ -234,10 +248,20 @@ if True:  # always define — mitmproxy loads this as a module
 
             if debug:
                 if isinstance(existing_system, str):
-                    preview = existing_system[:200] + "..." if len(existing_system) > 200 else existing_system
-                    log(log_file, f"DEBUG system field (str, len={len(existing_system)}): {preview!r}")
+                    preview = (
+                        existing_system[:200] + "..."
+                        if len(existing_system) > 200
+                        else existing_system
+                    )
+                    log(
+                        log_file,
+                        f"DEBUG system field (str, len={len(existing_system)}): {preview!r}",
+                    )
                 elif isinstance(existing_system, list):
-                    log(log_file, f"DEBUG system field (list, len={len(existing_system)}): {json.dumps(existing_system)[:500]}")
+                    log(
+                        log_file,
+                        f"DEBUG system field (list, len={len(existing_system)}): {json.dumps(existing_system)[:500]}",
+                    )
 
             if passthrough:
                 log(log_file, "Passthrough mode - not injecting")
@@ -282,7 +306,10 @@ if True:  # always define — mitmproxy loads this as a module
                 log(log_file, "Addon skip: no system field (internal request)")
                 return
             elif isinstance(existing_system, str):
-                if "software engineering tasks" not in existing_system and "interactive CLI tool" not in existing_system:
+                if (
+                    "software engineering tasks" not in existing_system
+                    and "interactive CLI tool" not in existing_system
+                ):
                     log(log_file, "Addon skip: not main conversation (internal request)")
                     return
                 _save_backup(existing_system)
@@ -297,7 +324,9 @@ if True:  # always define — mitmproxy loads this as a module
                 if merged == existing_system:
                     if canary_injected:
                         flow.request.set_text(json.dumps(body))
-                        log(log_file, "Addon preserved canary thinking turn; system already current")
+                        log(
+                            log_file, "Addon preserved canary thinking turn; system already current"
+                        )
                     log(log_file, f"Addon skip: system already matches (mode={merge_mode})")
                     return
                 body["system"] = merged
@@ -315,7 +344,10 @@ if True:  # always define — mitmproxy loads this as a module
                     if isinstance(block, dict) and block.get("type") == "text":
                         block_text = block.get("text", "")
                         existing_text += block_text
-                        if "software engineering tasks" in block_text or "interactive CLI tool" in block_text:
+                        if (
+                            "software engineering tasks" in block_text
+                            or "interactive CLI tool" in block_text
+                        ):
                             main_idx = idx
                 if main_idx is None:
                     log(log_file, "Addon skip: not main conversation (internal request)")

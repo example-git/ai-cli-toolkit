@@ -27,8 +27,8 @@ if _addon_dir not in sys.path:
 from prompt_builder import (  # noqa: E402
     build_guidelines_text,
     format_prior_user_message,
-    load_layer,
     load_canary_thought_raw,
+    load_layer,
     load_option,
     log,
     read_text_file,
@@ -79,13 +79,9 @@ def _apply_outgoing_probe(instructions: str, tag: str) -> str:
     return f"{marker}\n\n{base}"
 
 
-_PERMISSIONS_BLOCK_RE = re.compile(
-    r"(?is)<permissions instructions>.*?</permissions instructions>"
-)
+_PERMISSIONS_BLOCK_RE = re.compile(r"(?is)<permissions instructions>.*?</permissions instructions>")
 _APPS_BLOCK_RE = re.compile(r"(?is)##\s*Apps\b.*?(?=\n<[^>\n]+>|$)")
-_COLLABORATION_BLOCK_RE = re.compile(
-    r"(?is)<collaboration_mode>.*?</collaboration_mode>"
-)
+_COLLABORATION_BLOCK_RE = re.compile(r"(?is)<collaboration_mode>.*?</collaboration_mode>")
 
 # Matches the Personality … Escalation block in Codex system instructions.
 # Two variants: markdown headings (``# Personality`` … ``## Escalation``)
@@ -194,9 +190,7 @@ def _format_personality_block(raw_text: str) -> str:
         return "\n\n".join(parts)
 
     # Check whether user provided structured headings.
-    found_headings = {
-        m.group(1).lower() for m in _SECTION_HEADINGS_RE.finditer(raw)
-    }
+    found_headings = {m.group(1).lower() for m in _SECTION_HEADINGS_RE.finditer(raw)}
 
     if not found_headings:
         # Treat the entire text as the Personality description.
@@ -375,7 +369,11 @@ def _parse_canary_reasoning_item(raw: str) -> dict[str, Any] | None:
 
 
 def _is_canary_seed_user_message(message: Any) -> bool:
-    return isinstance(message, dict) and message.get("role") == "user" and _extract_message_text(message) == "."
+    return (
+        isinstance(message, dict)
+        and message.get("role") == "user"
+        and _extract_message_text(message) == "."
+    )
 
 
 def _has_canary_reasoning_turn(messages: list[Any], reasoning_item: dict[str, Any]) -> bool:
@@ -400,7 +398,11 @@ def _inject_canary_reasoning_turn(messages: list[Any], reasoning_item: dict[str,
     if _has_canary_reasoning_turn(messages, reasoning_item):
         return False
     first_user_idx = next(
-        (i for i, message in enumerate(messages) if isinstance(message, dict) and message.get("role") == "user"),
+        (
+            i
+            for i, message in enumerate(messages)
+            if isinstance(message, dict) and message.get("role") == "user"
+        ),
         None,
     )
     if first_user_idx is None:
@@ -443,25 +445,41 @@ class DeveloperInstructionInjector:
 
     def load(self, loader: Any) -> None:
         register_prompt_options(loader)
-        loader.add_option("target_path", str,
-                          "/backend-api/codex/responses",
-                          "Only inject for request paths containing this value.")
-        loader.add_option("wrapper_log_file", str, "",
-                          "Path to wrapper log file for addon diagnostics.")
-        loader.add_option("passthrough", bool, False,
-                          "Passthrough mode - no injection.")
-        loader.add_option("debug_requests", bool, False,
-                          "Log full request bodies for debugging.")
-        loader.add_option("rewrite_test_mode", str, "off",
-                          "Testing mode for rewrite path: off|outgoing|incoming|both.")
-        loader.add_option("rewrite_test_tag", str, "default",
-                          "Marker tag added when rewrite testing is enabled.")
-        loader.add_option("developer_instructions_mode", str, "overwrite",
-                          "Developer instruction merge mode: overwrite|append|prepend.")
-        loader.add_option("codex_developer_prompt_file", str, "",
-                          "Tool-specific developer prompt file for Codex sectioned prompt.")
-        loader.add_option("codex_personality_file", str, "",
-                          "Path to the managed Codex personality payload file.")
+        loader.add_option(
+            "target_path",
+            str,
+            "/backend-api/codex/responses",
+            "Only inject for request paths containing this value.",
+        )
+        loader.add_option(
+            "wrapper_log_file", str, "", "Path to wrapper log file for addon diagnostics."
+        )
+        loader.add_option("passthrough", bool, False, "Passthrough mode - no injection.")
+        loader.add_option("debug_requests", bool, False, "Log full request bodies for debugging.")
+        loader.add_option(
+            "rewrite_test_mode",
+            str,
+            "off",
+            "Testing mode for rewrite path: off|outgoing|incoming|both.",
+        )
+        loader.add_option(
+            "rewrite_test_tag", str, "default", "Marker tag added when rewrite testing is enabled."
+        )
+        loader.add_option(
+            "developer_instructions_mode",
+            str,
+            "overwrite",
+            "Developer instruction merge mode: overwrite|append|prepend.",
+        )
+        loader.add_option(
+            "codex_developer_prompt_file",
+            str,
+            "",
+            "Tool-specific developer prompt file for Codex sectioned prompt.",
+        )
+        loader.add_option(
+            "codex_personality_file", str, "", "Path to the managed Codex personality payload file."
+        )
 
     @staticmethod
     def _load_personality_injection_text() -> str:
@@ -490,14 +508,17 @@ class DeveloperInstructionInjector:
             Path(path_val).expanduser(),
         )
         defaults_path.parent.mkdir(parents=True, exist_ok=True)
-        payload = json.dumps(
-            {
-                "personality": sections["personality"],
-                "interaction_style": sections["interaction_style"],
-                "escalation": sections["escalation"],
-            },
-            indent=2,
-        ) + "\n"
+        payload = (
+            json.dumps(
+                {
+                    "personality": sections["personality"],
+                    "interaction_style": sections["interaction_style"],
+                    "escalation": sections["escalation"],
+                },
+                indent=2,
+            )
+            + "\n"
+        )
         existing = read_text_file(defaults_path)
         if existing == payload:
             return
@@ -545,7 +566,9 @@ class DeveloperInstructionInjector:
         return read_text_file(Path(path_val).expanduser()).strip()
 
     @staticmethod
-    def _compose_sectioned_text(recurring_blocks: list[tuple[str, str]], prior_user_message: str = "") -> str:
+    def _compose_sectioned_text(
+        recurring_blocks: list[tuple[str, str]], prior_user_message: str = ""
+    ) -> str:
         developer_prompt = DeveloperInstructionInjector._load_developer_prompt_text()
         guidelines_text = build_guidelines_text(developer_prompt=developer_prompt)
 
@@ -579,7 +602,9 @@ class DeveloperInstructionInjector:
         rewrite_test_mode = _normalize_rewrite_test_mode(
             getattr(ctx.options, "rewrite_test_mode", "off") or "off"
         )
-        rewrite_test_tag = (getattr(ctx.options, "rewrite_test_tag", "default") or "default").strip()
+        rewrite_test_tag = (
+            getattr(ctx.options, "rewrite_test_tag", "default") or "default"
+        ).strip()
         merge_mode = _normalize_developer_mode(
             getattr(ctx.options, "developer_instructions_mode", "overwrite") or "overwrite"
         )
@@ -604,16 +629,13 @@ class DeveloperInstructionInjector:
         top_instructions = body.get("instructions")
         personality_text = self._load_personality_injection_text()
         personality_applied = False
-        if (
-            not personality_text
-            and isinstance(top_instructions, str)
-            and top_instructions.strip()
-        ):
+        if not personality_text and isinstance(top_instructions, str) and top_instructions.strip():
             self._capture_default_personality(top_instructions, log_file)
         if personality_text:
             if isinstance(top_instructions, str) and top_instructions:
                 patched = self._apply_personality_injection(
-                    top_instructions, personality_text,
+                    top_instructions,
+                    personality_text,
                 )
                 if patched != top_instructions:
                     body["instructions"] = patched
@@ -623,7 +645,9 @@ class DeveloperInstructionInjector:
 
         recurring_blocks = _extract_recurring_blocks(existing_text)
         last_user_msg = _get_last_user_message(body)
-        sectioned_text = self._compose_sectioned_text(recurring_blocks, prior_user_message=last_user_msg)
+        sectioned_text = self._compose_sectioned_text(
+            recurring_blocks, prior_user_message=last_user_msg
+        )
         if merge_mode == "overwrite":
             next_text = sectioned_text
         else:
@@ -659,10 +683,7 @@ class DeveloperInstructionInjector:
                     return "canary-only", merge_mode, 0
                 log(
                     log_file,
-                    (
-                        "Addon skip: developer message already matches "
-                        f"(mode={merge_mode})"
-                    ),
+                    (f"Addon skip: developer message already matches (mode={merge_mode})"),
                 )
                 return None
             _set_message_text(first_message, merged_text)
@@ -751,7 +772,9 @@ class DeveloperInstructionInjector:
 
         raw_content = message.content
         try:
-            content_text = raw_content.decode("utf-8") if isinstance(raw_content, bytes) else raw_content
+            content_text = (
+                raw_content.decode("utf-8") if isinstance(raw_content, bytes) else raw_content
+            )
             body = json.loads(content_text)
         except (UnicodeDecodeError, json.JSONDecodeError):
             return
@@ -789,9 +812,13 @@ class DeveloperInstructionInjector:
         if not _rewrite_test_incoming_enabled(rewrite_test_mode):
             return
 
-        rewrite_test_tag = (getattr(ctx.options, "rewrite_test_tag", "default") or "default").strip()
+        rewrite_test_tag = (
+            getattr(ctx.options, "rewrite_test_tag", "default") or "default"
+        ).strip()
         marker = _incoming_probe_text(rewrite_test_tag)
-        flow.response.headers["x-ai-cli-rewrite-test"] = f"incoming; tag={rewrite_test_tag or 'default'}"
+        flow.response.headers["x-ai-cli-rewrite-test"] = (
+            f"incoming; tag={rewrite_test_tag or 'default'}"
+        )
 
         body_text = flow.response.get_text(strict=False) or ""
         if not body_text:

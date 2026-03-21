@@ -7,7 +7,6 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
 
 from ai_cli.config import ensure_config, get_tool_config, save_config
 from ai_cli.tools import load_registry
@@ -19,13 +18,16 @@ nvm_path = Path(f"{homedir}/.nvm/nvm.sh").expanduser()
 nvm_present = nvm_path.is_file()
 ALIAS_DIR = str(Path(f"{homedir}/.ai-cli/bin").expanduser())
 
+
 def _path_without_alias_dir(path_value: str | None = None) -> str:
     """Return PATH with the ai-cli alias directory removed."""
     raw = path_value if path_value is not None else os.environ.get("PATH", "")
     dirs = [d for d in raw.split(os.pathsep) if d != ALIAS_DIR]
     return os.pathsep.join(dirs)
 
+
 moddedpath = _path_without_alias_dir(userpath)
+
 
 def _run_shell(command: str) -> tuple[int, str]:
     """Run a shell command and return (exit_code, combined_output).
@@ -38,10 +40,9 @@ def _run_shell(command: str) -> tuple[int, str]:
     # effect even after bash's login-profile re-adds the alias dir.
     sanitised = (
         f'export PATH=f"{moddedpath}:{ALIAS_DIR}"; '
-	f'{f"source {nvm_path} if nvm_present else ''"}; '
-        f'{command}'
+        f"{f"source {nvm_path} if nvm_present else ''"}; "
+        f"{command}"
     )
-    
 
     result = subprocess.run(
         ["bash", "-lc", sanitised],
@@ -62,6 +63,7 @@ def _regenerate_completions() -> None:
     """Regenerate shell completions to pick up newly installed tool flags."""
     try:
         from ai_cli.completion_gen import generate
+
         print("\nRegenerating shell completions...")
         generate(shell="all")
     except Exception as exc:
@@ -76,8 +78,9 @@ def _persist_managed_binary(config: dict, tool_name: str, binary: str) -> None:
     save_config(config)
 
 
-def update_tool(tool_name: str, dry_run: bool = False, method: Optional[str] = None,
-                regen_completions: bool = True) -> int:
+def update_tool(
+    tool_name: str, dry_run: bool = False, method: str | None = None, regen_completions: bool = True
+) -> int:
     """Install or update one tool using its ToolSpec install command."""
     registry = load_registry()
     spec = registry.get(tool_name)
@@ -88,8 +91,7 @@ def update_tool(tool_name: str, dry_run: bool = False, method: Optional[str] = N
     if method and method not in spec.install_methods:
         available = ", ".join(spec.install_methods.keys()) or "(none)"
         print(
-            f"Unknown install method '{method}' for {tool_name}. "
-            f"Available: {available}",
+            f"Unknown install method '{method}' for {tool_name}. Available: {available}",
             file=sys.stderr,
         )
         return 1
@@ -148,7 +150,7 @@ def update_tool(tool_name: str, dry_run: bool = False, method: Optional[str] = N
     return 1
 
 
-def update_many(tool_names: list[str], dry_run: bool = False, method: Optional[str] = None) -> int:
+def update_many(tool_names: list[str], dry_run: bool = False, method: str | None = None) -> int:
     """Update multiple tools and return a combined exit status."""
     if not tool_names:
         print("No tools selected for update.", file=sys.stderr)
@@ -173,7 +175,7 @@ def update_many(tool_names: list[str], dry_run: bool = False, method: Optional[s
     return 0
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     """CLI entrypoint for `ai-cli update`."""
     parser = argparse.ArgumentParser(
         prog="ai-cli update",
@@ -201,9 +203,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         help="Show configured update commands.",
     )
     parser.add_argument(
-        "--method", "-m",
+        "--method",
+        "-m",
         help="Install method to use (e.g. npm, brew, macports, curl). "
-             "Use --list-methods to see available methods per tool.",
+        "Use --list-methods to see available methods per tool.",
     )
     parser.add_argument(
         "--list-methods",

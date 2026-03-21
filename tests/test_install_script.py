@@ -14,6 +14,9 @@ def test_install_script_copilot_methods_use_stable_and_prerelease() -> None:
 def test_install_script_gemini_methods_and_managed_binary_support() -> None:
     text = Path("install.sh").read_text(encoding="utf-8")
 
-    assert '[gemini]="latest:Latest|preview:Preview|nightly:Nightly|brew:Homebrew|macports:MacPorts"' in text
+    assert (
+        '[gemini]="latest:Latest|preview:Preview|nightly:Nightly|brew:Homebrew|macports:MacPorts"'
+        in text
+    )
     assert "tool_managed_binary()" in text
     assert "npm|npx|latest|preview|nightly" in text

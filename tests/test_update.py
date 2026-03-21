@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ai_cli.tools import ToolSpec
 from ai_cli import update
+from ai_cli.tools import ToolSpec
 
 
 def _copilot_spec() -> ToolSpec:
@@ -130,7 +130,9 @@ def test_update_tool_gemini_persists_managed_binary_after_install(
     monkeypatch.setattr(update, "get_tool_config", lambda config, tool_name: {"binary": ""})
     monkeypatch.setattr(update, "_run_shell", lambda command: (0, "ok"))
     monkeypatch.setattr(update, "save_config", lambda cfg: saved.append(cfg.copy()))
-    monkeypatch.setattr(spec, "detect_installed", lambda configured_binary="": configured_binary == managed_binary)
+    monkeypatch.setattr(
+        spec, "detect_installed", lambda configured_binary="": configured_binary == managed_binary
+    )
     monkeypatch.setattr(spec, "get_version", lambda configured_binary="": "v1")
 
     rc = update.update_tool("gemini", dry_run=False, regen_completions=False)

@@ -17,9 +17,9 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import MutableMapping
 from pathlib import Path
 from typing import Any
-from collections.abc import MutableMapping
 
 from ai_cli.log import append_log, fmt_cmd, tail_file, tail_text
 
@@ -107,10 +107,7 @@ def _pin_mitmdump_binary(binary: str, log_path: Path | None = None) -> str:
     if resolved != pinned_real:
         try:
             PINNED_MITM_DIR.mkdir(parents=True, exist_ok=True)
-            wrapper = (
-                "#!/usr/bin/env bash\n"
-                f"exec {shlex.quote(resolved)} \"$@\"\n"
-            )
+            wrapper = f'#!/usr/bin/env bash\nexec {shlex.quote(resolved)} "$@"\n'
             PINNED_MITMDUMP.write_text(wrapper, encoding="utf-8")
             PINNED_MITMDUMP.chmod(0o755)
             selected = pinned
@@ -212,9 +209,7 @@ def resolve_mitmdump() -> str:
             if _is_pinned_mitmdump_path(override):
                 os.environ.pop("MITM_BIN", None)
             else:
-                raise FileNotFoundError(
-                    "MITM_BIN is set but does not resolve to an executable."
-                )
+                raise FileNotFoundError("MITM_BIN is set but does not resolve to an executable.")
         else:
             ok, details = _probe_mitmdump(resolved)
             if ok:
@@ -248,9 +243,7 @@ def resolve_mitmdump() -> str:
         unique.append(candidate)
 
     if not unique:
-        raise FileNotFoundError(
-            "mitmdump not found. Install mitmproxy or set MITM_BIN."
-        )
+        raise FileNotFoundError("mitmdump not found. Install mitmproxy or set MITM_BIN.")
 
     failures: list[str] = []
     for candidate in unique:
@@ -261,8 +254,7 @@ def resolve_mitmdump() -> str:
 
     joined = "\n".join(failures)
     raise RuntimeError(
-        "Found mitmdump on PATH, but all candidates failed health checks.\n"
-        f"{joined}"
+        f"Found mitmdump on PATH, but all candidates failed health checks.\n{joined}"
     )
 
 
@@ -300,16 +292,12 @@ def ensure_mitmdump(log_path: Path) -> str:
     except FileNotFoundError:
         append_log(log_path, "mitmdump not found on PATH.")
 
-    append_log(
-        log_path, "Installing mitmproxy (first run setup or binary repair)."
-    )
+    append_log(log_path, "Installing mitmproxy (first run setup or binary repair).")
 
     install_attempts: list[list[str]] = []
     if shutil.which("pipx"):
         install_attempts.append(["pipx", "install", "--force", "mitmproxy"])
-    install_attempts.append(
-        [sys.executable, "-m", "pip", "install", "--user", "mitmproxy"]
-    )
+    install_attempts.append([sys.executable, "-m", "pip", "install", "--user", "mitmproxy"])
     if sys.platform == "darwin" and shutil.which("brew"):
         install_attempts.append(["brew", "install", "mitmproxy"])
 
@@ -344,8 +332,7 @@ def ensure_mitmdump(log_path: Path) -> str:
             append_log(log_path, tail_text(output))
 
     raise FileNotFoundError(
-        "Unable to install a usable mitmdump automatically. "
-        "Install mitmproxy manually and retry."
+        "Unable to install a usable mitmdump automatically. Install mitmproxy manually and retry."
     )
 
 
@@ -519,9 +506,7 @@ def start_proxy(
             append_log(log_path, "--- mitmdump startup log (tail) ---")
             append_log(log_path, tail)
             append_log(log_path, "--- end log tail ---")
-        raise RuntimeError(
-            f"mitmdump exited with code {proc.returncode or 1}"
-        )
+        raise RuntimeError(f"mitmdump exited with code {proc.returncode or 1}")
 
     return proc
 
@@ -591,8 +576,7 @@ def verify_proxy_flow(
             if now >= deadline:
                 append_log(
                     log_path,
-                    "Proxy health check failed "
-                    f"after {attempts} attempt(s): {last_error}",
+                    f"Proxy health check failed after {attempts} attempt(s): {last_error}",
                 )
                 return False
 

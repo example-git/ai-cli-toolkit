@@ -87,9 +87,7 @@ def bootstrap_ca_cert(
         try:
             shutil.copy2(generated_path, ca_path)
         except OSError as exc:
-            append_log(
-                log_path, f"Failed to copy generated CA cert to {ca_path}: {exc}"
-            )
+            append_log(log_path, f"Failed to copy generated CA cert to {ca_path}: {exc}")
 
     if ca_path.is_file():
         append_log(log_path, f"CA cert available at {ca_path}.")

@@ -57,10 +57,7 @@ def _target_path(target: str) -> str:
     home = Path.home()
     tool_name = os.environ.get("AI_CLI_TOOL", "codex")
     remote_spec = os.environ.get("AI_CLI_REMOTE_SPEC", "")
-    workdir = Path(
-        os.environ.get("AI_CLI_WORKDIR")
-        or str(_tmux_current_path() or Path.cwd())
-    )
+    workdir = Path(os.environ.get("AI_CLI_WORKDIR") or str(_tmux_current_path() or Path.cwd()))
     defaults = {
         "global": str(home / ".ai-cli" / "system_instructions.txt"),
         "base": str(home / ".ai-cli" / "base_instructions.txt"),
@@ -260,7 +257,14 @@ def _open_editor_window(args: argparse.Namespace) -> int:
         return 0
 
     try:
-        cmd = ["new-window", "-n", args.window_name, "-c", str(target.parent), _self_command(args, lock_path, token)]
+        cmd = [
+            "new-window",
+            "-n",
+            args.window_name,
+            "-c",
+            str(target.parent),
+            _self_command(args, lock_path, token),
+        ]
         proc = _tmux(args.tmux_socket, *cmd)
         if proc.returncode != 0:
             raise RuntimeError(proc.stderr.strip() or "tmux new-window failed")
@@ -302,7 +306,7 @@ def main(argv: list[str] | None = None) -> int:
     base.add_argument("--window-name", required=True)
     base.add_argument("--tmux-socket")
 
-    open_parser = subparsers.add_parser("open", parents=[base])
+    subparsers.add_parser("open", parents=[base])
 
     edit_parser = subparsers.add_parser("edit", parents=[base])
     edit_parser.add_argument("--lock-file", required=True)

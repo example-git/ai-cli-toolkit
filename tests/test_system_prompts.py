@@ -4,8 +4,7 @@ import sqlite3
 from pathlib import Path
 
 from ai_cli import main as main_mod
-from ai_cli import system_prompts
-from ai_cli import tui
+from ai_cli import system_prompts, tui
 
 
 def _seed_prompt_db(db_path: Path) -> None:
@@ -134,10 +133,14 @@ def test_system_prompts_missing_db_returns_error(tmp_path: Path, capsys) -> None
 def test_main_system_dispatches_to_browser(monkeypatch) -> None:
     calls: list[list[str]] = []
 
+    def _fake_system_prompts_main(argv: list[str] | None = None) -> int:
+        calls.append(list(argv or []))
+        return 0
+
     monkeypatch.setattr(
         system_prompts,
         "main",
-        lambda argv=None: calls.append(list(argv or [])) or 0,
+        _fake_system_prompts_main,
     )
     monkeypatch.setattr(main_mod.sys, "argv", ["ai-cli", "system"])
 
@@ -150,10 +153,14 @@ def test_main_system_dispatches_to_browser(monkeypatch) -> None:
 def test_main_system_prompt_alias_passes_query(monkeypatch) -> None:
     calls: list[list[str]] = []
 
+    def _fake_system_prompts_main(argv: list[str] | None = None) -> int:
+        calls.append(list(argv or []))
+        return 0
+
     monkeypatch.setattr(
         system_prompts,
         "main",
-        lambda argv=None: calls.append(list(argv or [])) or 0,
+        _fake_system_prompts_main,
     )
     monkeypatch.setattr(main_mod.sys, "argv", ["ai-cli", "system", "prompt", "gpt-test"])
 
@@ -166,10 +173,14 @@ def test_main_system_prompt_alias_passes_query(monkeypatch) -> None:
 def test_main_system_edit_alias_still_uses_prompt_edit(monkeypatch) -> None:
     calls: list[tuple[str, str]] = []
 
+    def _fake_cmd_prompt_edit(scope: str, tool_arg: str = "") -> int:
+        calls.append((scope, tool_arg))
+        return 0
+
     monkeypatch.setattr(
         main_mod,
         "_cmd_prompt_edit",
-        lambda scope, tool_arg="": calls.append((scope, tool_arg)) or 0,
+        _fake_cmd_prompt_edit,
     )
     monkeypatch.setattr(main_mod.sys, "argv", ["ai-cli", "system", "edit", "tool", "codex"])
 

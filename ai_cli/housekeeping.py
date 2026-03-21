@@ -35,7 +35,9 @@ def prune_old_traffic_rows(db_path: Path, max_age_days: int, log_path: Path | No
     if max_age_days < 1 or not db_path.is_file():
         return 0
 
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
     try:
         conn = sqlite3.connect(str(db_path))
         cur = conn.execute("DELETE FROM traffic WHERE ts < ?", (cutoff,))

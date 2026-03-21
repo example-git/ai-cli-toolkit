@@ -1,6 +1,7 @@
 # Reference materials (original scripts, not part of the project)
 reference/
-
+.coverage
+*.json
 # Python
 __pycache__/
 *.py[cod]

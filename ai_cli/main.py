@@ -31,31 +31,60 @@ from ai_cli.config import (
 )
 from ai_cli.housekeeping import prune_old_logs, prune_old_traffic_rows
 from ai_cli.instructions import (
-    ensure_project_instructions_file,
     edit_instructions,
+    ensure_project_instructions_file,
     resolve_base_instructions_path,
     resolve_instructions_file,
 )
 from ai_cli.log import append_log, fmt_cmd
 from ai_cli.main_helpers import (
     ai_mux_status as _mh_ai_mux_status,
+)
+from ai_cli.main_helpers import (
     check_codex_proxy_compat as _mh_check_codex_proxy_compat,
+)
+from ai_cli.main_helpers import (
     cleanup_session_files as _mh_cleanup_session_files,
+)
+from ai_cli.main_helpers import (
     extract_launch_cwd as _mh_extract_launch_cwd,
+)
+from ai_cli.main_helpers import (
     find_ai_mux as _mh_find_ai_mux,
+)
+from ai_cli.main_helpers import (
     find_reusable_tmux_session as _mh_find_reusable_tmux_session,
+)
+from ai_cli.main_helpers import (
     kill_proxy_from_env as _mh_kill_proxy_from_env,
+)
+from ai_cli.main_helpers import (
     parse_wrapper_overrides as _mh_parse_wrapper_overrides,
+)
+from ai_cli.main_helpers import (
     replace_existing_tmux_session as _mh_replace_existing_tmux_session,
+)
+from ai_cli.main_helpers import (
     resolve_recv_context_file as _mh_resolve_recv_context_file,
+)
+from ai_cli.main_helpers import (
     session_id as _mh_session_id,
+)
+from ai_cli.main_helpers import (
     spawn_detached_proxy_watcher as _mh_spawn_detached_proxy_watcher,
+)
+from ai_cli.main_helpers import (
     terminate_pid as _mh_terminate_pid,
+)
+from ai_cli.main_helpers import (
     tmux_list_sessions as _mh_tmux_list_sessions,
+)
+from ai_cli.main_helpers import (
     tmux_session_env as _mh_tmux_session_env,
+)
+from ai_cli.main_helpers import (
     write_session_files as _mh_write_session_files,
 )
-from ai_cli.session import build_recent_context_for_cwd
 from ai_cli.proxy import (
     allocate_port,
     apply_pinned_mitmdump_path,
@@ -68,7 +97,8 @@ from ai_cli.proxy import (
     verify_proxy_flow,
 )
 from ai_cli.remote import RemoteSpec
-from ai_cli.tools import TOOL_ALIASES, load_registry, ToolSpec
+from ai_cli.session import build_recent_context_for_cwd
+from ai_cli.tools import TOOL_ALIASES, load_registry
 
 
 def _check_codex_proxy_compat(log_path: Path | None = None) -> None:
@@ -78,6 +108,7 @@ def _check_codex_proxy_compat(log_path: Path | None = None) -> None:
 # ---------------------------------------------------------------------------
 # Session management
 # ---------------------------------------------------------------------------
+
 
 def _session_id(tool_name: str) -> str:
     return _mh_session_id(tool_name)
@@ -338,6 +369,7 @@ def _replace_existing_tmux_session(
 # Tool runner
 # ---------------------------------------------------------------------------
 
+
 def _parse_wrapper_overrides(args: list[str]) -> tuple[list[str], dict[str, Any]]:
     return _mh_parse_wrapper_overrides(args)
 
@@ -355,9 +387,7 @@ def _ai_mux_status() -> tuple[str, str | None]:
 
 
 def _default_remote_session_name(tool_name: str, remote_spec: RemoteSpec) -> str:
-    digest = hashlib.sha256(
-        f"{tool_name}:{remote_spec.display}".encode("utf-8")
-    ).hexdigest()[:12]
+    digest = hashlib.sha256(f"{tool_name}:{remote_spec.display}".encode()).hexdigest()[:12]
     return f"ai-cli-{tool_name}-{digest}"
 
 
@@ -497,16 +527,10 @@ def run_tool(tool_name: str, args: list[str]) -> int:
     # ── Compute remote mode ──────────────────────────────────────────────
     # Default for remote specs is session mode (tool runs on the remote).
     # Use --ai-cli-remote-rsync / AI_CLI_REMOTE_RSYNC=1 to force old rsync mode.
-    _remote_rsync_flag = (
-        wrapper_overrides.get("remote_rsync", False)
-        or (
-            os.environ.get("AI_CLI_REMOTE_RSYNC", "").strip().lower()
-            in {"1", "true", "yes", "on"}
-        )
+    _remote_rsync_flag = wrapper_overrides.get("remote_rsync", False) or (
+        os.environ.get("AI_CLI_REMOTE_RSYNC", "").strip().lower() in {"1", "true", "yes", "on"}
     )
-    _remote_session_flag = (
-        remote_spec is not None and not _remote_rsync_flag
-    )
+    _remote_session_flag = remote_spec is not None and not _remote_rsync_flag
 
     local_mirror: Path | None = None
     runner: RemoteSessionRunner | None = None
@@ -640,9 +664,7 @@ def run_tool(tool_name: str, args: list[str]) -> int:
     runtime_canary = canary_rule
     if startup_context:
         runtime_canary = (
-            f"{canary_rule}\n\n{startup_context}"
-            if canary_rule.strip()
-            else startup_context
+            f"{canary_rule}\n\n{startup_context}" if canary_rule.strip() else startup_context
         )
         append_log(log_path, "Loaded startup recent-context block from session history.")
         print("ai-cli startup context:", file=sys.stderr)
@@ -652,18 +674,10 @@ def run_tool(tool_name: str, args: list[str]) -> int:
     # Inline text override (--ai-cli-instructions-text) — only passed when
     # the user explicitly provides text instead of relying on the file.
     inline_global_override = wrapper_overrides["instructions_text"]
-    proxy_instructions_file = (
-        ""
-        if inline_global_override is not None
-        else instructions_file
-    )
+    proxy_instructions_file = "" if inline_global_override is not None else instructions_file
 
     tool_prompt_file = _resolve_tool_prompt_file(config, tool_name)
-    codex_personality_file = (
-        _resolve_codex_personality_file()
-        if tool_name == "codex"
-        else ""
-    )
+    codex_personality_file = _resolve_codex_personality_file() if tool_name == "codex" else ""
     canary_thought_file = _resolve_canary_thought_file(tool_name)
     project_prompt_file = ensure_project_instructions_file(
         project_cwd=str(effective_cwd),
@@ -736,7 +750,8 @@ def run_tool(tool_name: str, args: list[str]) -> int:
             ),
             developer_instructions_mode=(
                 (wrapper_overrides["developer_instructions_mode"] or "").strip().lower()
-                if tool_name == "codex" and wrapper_overrides["developer_instructions_mode"] is not None
+                if tool_name == "codex"
+                and wrapper_overrides["developer_instructions_mode"] is not None
                 else (
                     (tool_cfg.get("developer_instructions_mode", "") or "").strip().lower()
                     if tool_name == "codex"
@@ -748,9 +763,7 @@ def run_tool(tool_name: str, args: list[str]) -> int:
                 if tool_name == "codex" and wrapper_overrides["rewrite_test_tag"] is not None
                 else ""
             ),
-            codex_developer_prompt_file=(
-                tool_prompt_file if tool_name == "codex" else ""
-            ),
+            codex_developer_prompt_file=(tool_prompt_file if tool_name == "codex" else ""),
             codex_personality_file=codex_personality_file,
             gemini_canary_thought_injection_enabled=(
                 (
@@ -830,12 +843,9 @@ def run_tool(tool_name: str, args: list[str]) -> int:
     # Codex maps Ctrl+G to "edit in external editor". Keep it enabled by
     # default; allow users to disable it explicitly for wrapped sessions.
     if tool_name == "codex":
-        disable_external_editor = (
-            os.environ.get("AI_CLI_CODEX_DISABLE_EXTERNAL_EDITOR", "")
-            .strip()
-            .lower()
-            in {"1", "true", "yes", "on"}
-        )
+        disable_external_editor = os.environ.get(
+            "AI_CLI_CODEX_DISABLE_EXTERNAL_EDITOR", ""
+        ).strip().lower() in {"1", "true", "yes", "on"}
         if disable_external_editor:
             env.pop("VISUAL", None)
             env.pop("EDITOR", None)
@@ -874,6 +884,7 @@ def run_tool(tool_name: str, args: list[str]) -> int:
 
         remote_init = wrapper_overrides.get("remote_init") or ""
         import shlex as _shlex
+
         remote_tool_cmd = spec.default_binary
         remote_tool_args_suffix = ""
         # Forward any extra tool args
@@ -887,12 +898,9 @@ def run_tool(tool_name: str, args: list[str]) -> int:
             remote_tool_cmd += remote_tool_args_suffix
 
         _effective_proxy_port = port if proxy_enabled else 0
-        _no_package = (
-            wrapper_overrides.get("remote_no_package", False)
-            or (
-                os.environ.get("AI_CLI_REMOTE_NO_PACKAGE", "").strip().lower()
-                in {"1", "true", "yes", "on"}
-            )
+        _no_package = wrapper_overrides.get("remote_no_package", False) or (
+            os.environ.get("AI_CLI_REMOTE_NO_PACKAGE", "").strip().lower()
+            in {"1", "true", "yes", "on"}
         )
 
         # ── Packaged mode (default) ──────────────────────────────────────
@@ -931,8 +939,7 @@ def run_tool(tool_name: str, args: list[str]) -> int:
                 _install_cmd = spec.get_install_command()
                 if _install_cmd:
                     print_sync_status(
-                        f"{tool_name} not found on {remote_spec.ssh_target}, "
-                        f"installing..."
+                        f"{tool_name} not found on {remote_spec.ssh_target}, installing..."
                     )
                     install_remote_tool(
                         remote_spec,
@@ -1017,8 +1024,7 @@ def run_tool(tool_name: str, args: list[str]) -> int:
 
             try:
                 print_sync_status(
-                    f"Pushing config package → "
-                    f"{remote_spec.ssh_target}:{package.session_dir}"
+                    f"Pushing config package → {remote_spec.ssh_target}:{package.session_dir}"
                 )
                 push_package(package, remote_spec)
 
@@ -1042,12 +1048,9 @@ def run_tool(tool_name: str, args: list[str]) -> int:
                     )
                     append_log(log_path, f"Remote ai-mux session exit code: {exit_code}")
                 else:
-
                     # Check for an existing session — reattach without re-pushing
                     if probe_remote_session(package, remote_spec):
-                        print_sync_status(
-                            f"Existing session found: {package.session_name}"
-                        )
+                        print_sync_status(f"Existing session found: {package.session_name}")
                         exit_code = reattach_remote_session(
                             package,
                             remote_spec,
@@ -1095,10 +1098,9 @@ def run_tool(tool_name: str, args: list[str]) -> int:
             return exit_code
 
         # ── No-package mode (raw $HOME, no isolation) ────────────────────
-        remote_session_name = (
-            wrapper_overrides.get("remote_session_name")
-            or _default_remote_session_name(tool_name, remote_spec)
-        )
+        remote_session_name = wrapper_overrides.get(
+            "remote_session_name"
+        ) or _default_remote_session_name(tool_name, remote_spec)
         append_log(
             log_path,
             f"Remote session mode (no-package): {remote_spec.display} "
@@ -1112,6 +1114,7 @@ def run_tool(tool_name: str, args: list[str]) -> int:
                 session_name=remote_session_name,
             )
             import shlex as _shlex
+
             cd_cmd = f"cd {_shlex.quote(remote_spec.path)}"
             if remote_init:
                 init_sequence = f"{cd_cmd} && {remote_init}"
@@ -1185,7 +1188,7 @@ def run_tool(tool_name: str, args: list[str]) -> int:
                         "cwd": str(effective_cwd),
                         "primary": False,
                     },
-                ]
+                ],
             }
 
             config_path = ""
@@ -1264,9 +1267,7 @@ def run_tool(tool_name: str, args: list[str]) -> int:
                     "(set AI_CLI_CLAUDE_USE_MUX=1 to force ai-mux).",
                 )
             # Non-TTY fallback: plain subprocess
-            child_proc = subprocess.Popen(
-                tool_cmd, env=env, cwd=str(effective_cwd)
-            )
+            child_proc = subprocess.Popen(tool_cmd, env=env, cwd=str(effective_cwd))
             exit_code = child_proc.wait()
             append_log(log_path, f"Tool exit code: {exit_code}")
 
@@ -1311,6 +1312,7 @@ def run_tool(tool_name: str, args: list[str]) -> int:
 # Subcommands
 # ---------------------------------------------------------------------------
 
+
 def _cmd_system_prompt(model_query: str) -> int:
     """Cat a captured system prompt by model name (fuzzy match)."""
     import sqlite3
@@ -1340,7 +1342,9 @@ def _cmd_system_prompt(model_query: str) -> int:
         print("-" * 90)
         for r in all_rows:
             last = (r["last_seen"] or "?")[:19]
-            print(f"{r['provider']:<12} {r['model']:<28} {r['role']:<14} {r['char_count']:>7}  {last}")
+            print(
+                f"{r['provider']:<12} {r['model']:<28} {r['role']:<14} {r['char_count']:>7}  {last}"
+            )
         print()
         print("Usage: ai-cli system prompt <model>", file=sys.stderr)
         conn.close()
@@ -1398,7 +1402,9 @@ def _cmd_system_prompt(model_query: str) -> int:
             print("═" * 80)
             print()
         print(f"# {r['provider']}/{r['model']} [{r['role']}]", file=sys.stderr)
-        print(f"# {r['char_count']} chars, last seen {(r['last_seen'] or '?')[:19]}", file=sys.stderr)
+        print(
+            f"# {r['char_count']} chars, last seen {(r['last_seen'] or '?')[:19]}", file=sys.stderr
+        )
         print(r["content"])
 
     return 0
@@ -1488,8 +1494,7 @@ def _collect_cleanup_targets(include_all: bool = False) -> list[dict[str, Any]]:
                 "session_name": session_name,
                 "session_env": session_env,
                 "label": (
-                    f"[mux-scan] session={session_name} "
-                    f"(tool={tool}, cwd={cwd}{proxy_part})"
+                    f"[mux-scan] session={session_name} (tool={tool}, cwd={cwd}{proxy_part})"
                 ),
             }
         )
@@ -1589,7 +1594,9 @@ def cmd_cleanup(args: list[str]) -> int:
     if known.help:
         print("Usage: ai-cli cleanup [--list] [--all | --select 1,2,3] [-y]")
         print("  --list        Show detected tracked-session targets without cleaning")
-        print("  --all         Deep-scan and kill tracked sessions plus host ai-mux/agent processes")
+        print(
+            "  --all         Deep-scan and kill tracked sessions plus host ai-mux/agent processes"
+        )
         print("  --select      Comma-separated item numbers from the target list")
         print("  -y, --yes     Skip confirmation prompt")
         return 0
@@ -1749,6 +1756,7 @@ def _cmd_system_browser(argv: list[str]) -> int:
 # Main entry point
 # ---------------------------------------------------------------------------
 
+
 def main() -> int:
     # Binary-name routing: check argv[0]
     invoked_name = Path(sys.argv[0]).name
@@ -1793,10 +1801,12 @@ def main() -> int:
 
     if subcommand == "canary-capture":
         from ai_cli.canary_capture import cmd_canary_capture
+
         return cmd_canary_capture(sys.argv[2:])
 
     if subcommand == "canary-seed":
         from ai_cli.canary_capture import cmd_canary_seed
+
         return cmd_canary_seed(sys.argv[2:])
 
     if subcommand in ("session", "history"):
@@ -1839,7 +1849,9 @@ def main() -> int:
         print("  ai-cli prompt-edit ...    Edit global/tool prompt files")
         print("  ai-cli system prompt [query]  Browse historical or parsed system prompts")
         print("  ai-cli status             Show installed tools and versions")
-        print("  ai-cli cleanup [opts]     Kill tracked sessions or deep-scan ai-mux/agent processes")
+        print(
+            "  ai-cli cleanup [opts]     Kill tracked sessions or deep-scan ai-mux/agent processes"
+        )
         print("  ai-cli history [opts]     Browse agent conversation history")
         print("  ai-cli traffic [opts]     Browse proxied API traffic")
         print("  ai-cli update [opts]      Install or update wrapped tools")
@@ -1851,7 +1863,7 @@ def main() -> int:
 
     # Unknown — try as tool name
     print(f"Unknown subcommand: {subcommand}", file=sys.stderr)
-    print(f"Run 'ai-cli --help' for usage.", file=sys.stderr)
+    print("Run 'ai-cli --help' for usage.", file=sys.stderr)
     return 1
 
 

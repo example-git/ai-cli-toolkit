@@ -11,7 +11,7 @@ _COPILOT_INSTALL_STABLE = (
 _COPILOT_INSTALL_PRERELEASE = (
     "(if command -v curl >/dev/null 2>&1; "
     "then curl -fsSL https://gh.io/copilot-install; "
-    "else wget -qO- https://gh.io/copilot-install; fi) | VERSION=\"prerelease\" bash"
+    'else wget -qO- https://gh.io/copilot-install; fi) | VERSION="prerelease" bash'
 )
 
 spec = ToolSpec(

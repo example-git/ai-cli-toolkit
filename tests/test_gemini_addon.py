@@ -6,11 +6,14 @@ import mitmproxy.ctx as _mitmproxy_ctx
 
 from ai_cli.addons import gemini_addon
 
-
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-_GEMINI_CANARY_SIGNATURE = (_REPO_ROOT / "gemini-canary-value.txt").read_text(
-    encoding="utf-8"
-).strip()
+
+if Path(f"{_REPO_ROOT}/gemini-canary-value.txt").is_file():
+    _GEMINI_CANARY_SIGNATURE = (
+        (_REPO_ROOT / "gemini-canary-value.txt").read_text(encoding="utf-8").strip()
+    )
+else:
+    _GEMINI_CANARY_SIGNATURE = "test"
 
 
 class _DummyRequest:
@@ -140,7 +143,9 @@ def test_request_injects_internal_envelope_system_instruction(monkeypatch) -> No
     assert request_body["contents"] == original_contents
 
 
-def test_request_preserves_canary_static_injection_when_compat_option_is_disabled(monkeypatch) -> None:
+def test_request_preserves_canary_static_injection_when_compat_option_is_disabled(
+    monkeypatch,
+) -> None:
     _set_options(monkeypatch, enabled=False)
     injector = gemini_addon.GeminiSystemInstructionInjector()
     flow = _DummyFlow(

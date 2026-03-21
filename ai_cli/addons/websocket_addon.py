@@ -20,6 +20,7 @@ _addon_dir = str(Path(__file__).resolve().parent)
 if _addon_dir not in sys.path:
     sys.path.insert(0, _addon_dir)
 
+from mitmproxy import ctx, http  # type: ignore[import-untyped]
 from prompt_builder import (  # noqa: E402
     build_guidelines_text,
     format_prior_user_message,
@@ -27,9 +28,6 @@ from prompt_builder import (  # noqa: E402
     log,
     register_prompt_options,
 )
-
-
-from mitmproxy import ctx, http  # type: ignore[import-untyped]
 
 
 class WebSocketInstructionInjector:
@@ -44,25 +42,22 @@ class WebSocketInstructionInjector:
 
     def load(self, loader: Any) -> None:
         register_prompt_options(loader)
-        loader.add_option("target_path", str, "",
-                          "Only process WebSocket connections to paths containing this value.")
-        loader.add_option("wrapper_log_file", str, "",
-                          "Path to wrapper log file.")
-        loader.add_option("passthrough", bool, False,
-                          "Passthrough mode - no injection.")
+        loader.add_option(
+            "target_path",
+            str,
+            "",
+            "Only process WebSocket connections to paths containing this value.",
+        )
+        loader.add_option("wrapper_log_file", str, "", "Path to wrapper log file.")
+        loader.add_option("passthrough", bool, False, "Passthrough mode - no injection.")
 
     def _should_inject(self, data: dict[str, Any]) -> bool:
         """Override in subclass to detect instruction-bearing frames."""
         return (
-            "system" in data
-            or "messages" in data
-            or "input" in data
-            or "systemInstruction" in data
+            "system" in data or "messages" in data or "input" in data or "systemInstruction" in data
         )
 
-    def _inject_into_frame(
-        self, data: dict[str, Any], instructions: str
-    ) -> dict[str, Any]:
+    def _inject_into_frame(self, data: dict[str, Any], instructions: str) -> dict[str, Any]:
         """Override in subclass for tool-specific injection.
 
         Default implementation handles common patterns.
@@ -140,23 +135,32 @@ class WebSocketInstructionInjector:
                     msg_list = data["input"]
                 if msg_list is not None:
                     first_user_idx = next(
-                        (i for i, m in enumerate(msg_list)
-                         if isinstance(m, dict) and m.get("role") == "user"),
+                        (
+                            i
+                            for i, m in enumerate(msg_list)
+                            if isinstance(m, dict) and m.get("role") == "user"
+                        ),
                         None,
                     )
                     if first_user_idx is not None:
-                        msg_list.insert(first_user_idx, {
-                            "role": "assistant",
-                            "content": [canary_block],
-                        })
-                        msg_list.insert(first_user_idx, {
-                            "role": "user",
-                            "content": [{"type": "text", "text": "."}],
-                        })
+                        msg_list.insert(
+                            first_user_idx,
+                            {
+                                "role": "assistant",
+                                "content": [canary_block],
+                            },
+                        )
+                        msg_list.insert(
+                            first_user_idx,
+                            {
+                                "role": "user",
+                                "content": [{"type": "text", "text": "."}],
+                            },
+                        )
                         log(log_file, "WebSocket injected canary thinking turn")
 
         instructions = build_guidelines_text()
-        
+
         # Best effort extraction of last user message
         last_user_msg = ""
         candidates = []
@@ -166,7 +170,7 @@ class WebSocketInstructionInjector:
             candidates = data["input"]
         elif "contents" in data and isinstance(data["contents"], list):
             candidates = data["contents"]
-            
+
         for msg in reversed(candidates):
             if isinstance(msg, dict):
                 role = msg.get("role")
@@ -189,14 +193,14 @@ class WebSocketInstructionInjector:
                         text_parts = []
                         for part in parts:
                             if isinstance(part, dict) and "text" in part:
-                                 text_parts.append(part.get("text", ""))
+                                text_parts.append(part.get("text", ""))
                         last_user_msg = "\n".join(text_parts)
                         break
 
         formatted_msg = format_prior_user_message(last_user_msg)
         full_instructions = instructions
         if formatted_msg:
-             full_instructions = f"{instructions}\n\n{formatted_msg}"
+            full_instructions = f"{instructions}\n\n{formatted_msg}"
 
         if not full_instructions:
             return

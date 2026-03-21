@@ -25,12 +25,14 @@ if _addon_dir not in sys.path:
 def _get_ctx():
     """Lazy accessor for mitmproxy ctx — allows tests to monkeypatch."""
     from mitmproxy import ctx  # type: ignore[import-untyped]
+
     return ctx
 
 
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
 
 def read_text_file(path: Path) -> str:
     try:
@@ -145,43 +147,66 @@ def strip_injected_sections(text: str) -> str:
 # Option registration
 # ---------------------------------------------------------------------------
 
+
 def register_prompt_options(loader: Any) -> None:
     """Register the common instruction options shared by all tool addons."""
-    loader.add_option("system_instructions_file", str, "",
-                      "Path to system instructions text file.")
-    loader.add_option("system_instructions_text", str, "",
-                      "Literal system instructions text.")
-    loader.add_option("system_instructions_text_explicit", bool, False,
-                      "Whether literal system instructions text was explicitly provided.")
-    loader.add_option("base_instructions_text", str, "",
-                      "Literal base instruction layer text.")
-    loader.add_option("base_instructions_file", str, "",
-                      "Path to base instruction layer file.")
-    loader.add_option("base_instructions_text_explicit", bool, False,
-                      "Whether literal base instruction text was explicitly provided.")
-    loader.add_option("project_instructions_text", str, "",
-                      "Literal project instruction layer text.")
-    loader.add_option("project_instructions_file", str, "",
-                      "Path to project instruction layer file.")
-    loader.add_option("project_instructions_text_explicit", bool, False,
-                      "Whether literal project instruction text was explicitly provided.")
-    loader.add_option("tool_instructions_text", str, "",
-                      "Literal tool-specific instructions text.")
-    loader.add_option("tool_instructions_file", str, "",
-                      "Path to tool-specific instructions file.")
-    loader.add_option("tool_instructions_text_explicit", bool, False,
-                      "Whether literal tool instruction text was explicitly provided.")
-    loader.add_option("canary_rule", str, "",
-                      "Canary instruction prepended before system instructions.")
-    loader.add_option("canary_thought_injection_enabled", bool, True,
-                      "Inject pre-captured canary thought as a compliance seed.")
-    loader.add_option("canary_thought_file", str, "",
-                      "Path to the static canary thought text file (captured from traffic logs).")
+    loader.add_option("system_instructions_file", str, "", "Path to system instructions text file.")
+    loader.add_option("system_instructions_text", str, "", "Literal system instructions text.")
+    loader.add_option(
+        "system_instructions_text_explicit",
+        bool,
+        False,
+        "Whether literal system instructions text was explicitly provided.",
+    )
+    loader.add_option("base_instructions_text", str, "", "Literal base instruction layer text.")
+    loader.add_option("base_instructions_file", str, "", "Path to base instruction layer file.")
+    loader.add_option(
+        "base_instructions_text_explicit",
+        bool,
+        False,
+        "Whether literal base instruction text was explicitly provided.",
+    )
+    loader.add_option(
+        "project_instructions_text", str, "", "Literal project instruction layer text."
+    )
+    loader.add_option(
+        "project_instructions_file", str, "", "Path to project instruction layer file."
+    )
+    loader.add_option(
+        "project_instructions_text_explicit",
+        bool,
+        False,
+        "Whether literal project instruction text was explicitly provided.",
+    )
+    loader.add_option("tool_instructions_text", str, "", "Literal tool-specific instructions text.")
+    loader.add_option("tool_instructions_file", str, "", "Path to tool-specific instructions file.")
+    loader.add_option(
+        "tool_instructions_text_explicit",
+        bool,
+        False,
+        "Whether literal tool instruction text was explicitly provided.",
+    )
+    loader.add_option(
+        "canary_rule", str, "", "Canary instruction prepended before system instructions."
+    )
+    loader.add_option(
+        "canary_thought_injection_enabled",
+        bool,
+        True,
+        "Inject pre-captured canary thought as a compliance seed.",
+    )
+    loader.add_option(
+        "canary_thought_file",
+        str,
+        "",
+        "Path to the static canary thought text file (captured from traffic logs).",
+    )
 
 
 # ---------------------------------------------------------------------------
 # Main builder
 # ---------------------------------------------------------------------------
+
 
 def build_guidelines_text(*, developer_prompt: str | None = None) -> str:
     """Build the full layered guidelines string from current option values.

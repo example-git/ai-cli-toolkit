@@ -16,9 +16,7 @@ def append_log(path: Path, message: str) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as handle:
-            handle.write(
-                f"[{datetime.now().isoformat(timespec='seconds')}] {message}\n"
-            )
+            handle.write(f"[{datetime.now().isoformat(timespec='seconds')}] {message}\n")
     except OSError as exc:
         print(f"ai-cli: logging failed at {path}: {exc}", file=sys.stderr)
 

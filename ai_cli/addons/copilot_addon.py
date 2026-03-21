@@ -114,7 +114,6 @@ def _get_last_user_message(body: dict[str, Any]) -> str:
     return ""
 
 
-
 from mitmproxy import ctx, http  # type: ignore[import-untyped]
 
 
@@ -123,16 +122,23 @@ class SystemInstructionInjector:
 
     def load(self, loader: Any) -> None:
         register_prompt_options(loader)
-        loader.add_option("target_path", str, "/chat/completions",
-                          "Only inject for request paths containing this value.")
-        loader.add_option("wrapper_log_file", str, "",
-                          "Path to wrapper log file for addon diagnostics.")
-        loader.add_option("passthrough", bool, False,
-                          "Passthrough mode - no injection.")
-        loader.add_option("debug_requests", bool, False,
-                          "Log full request bodies for debugging.")
-        loader.add_option("developer_instructions_mode", str, "overwrite",
-                  "Instruction merge mode: overwrite|append|prepend.")
+        loader.add_option(
+            "target_path",
+            str,
+            "/chat/completions",
+            "Only inject for request paths containing this value.",
+        )
+        loader.add_option(
+            "wrapper_log_file", str, "", "Path to wrapper log file for addon diagnostics."
+        )
+        loader.add_option("passthrough", bool, False, "Passthrough mode - no injection.")
+        loader.add_option("debug_requests", bool, False, "Log full request bodies for debugging.")
+        loader.add_option(
+            "developer_instructions_mode",
+            str,
+            "overwrite",
+            "Instruction merge mode: overwrite|append|prepend.",
+        )
 
     @staticmethod
     def _already_injected(messages: list[Any], text: str) -> bool:
@@ -146,7 +152,11 @@ class SystemInstructionInjector:
             return text in content
         if isinstance(content, list):
             for part in content:
-                if isinstance(part, dict) and part.get("type") == "text" and text in part.get("text", ""):
+                if (
+                    isinstance(part, dict)
+                    and part.get("type") == "text"
+                    and text in part.get("text", "")
+                ):
                     return True
         return False
 

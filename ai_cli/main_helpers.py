@@ -289,7 +289,9 @@ def kill_proxy_from_env(session_env: dict[str, str], log_path: Path) -> None:
     )
     parsed = urlparse(proxy_url)
     if parsed.port is None:
-        append_log(log_path, "Existing session proxy PID/port not found; skipping direct proxy stop")
+        append_log(
+            log_path, "Existing session proxy PID/port not found; skipping direct proxy stop"
+        )
         return
 
     try:
@@ -443,7 +445,7 @@ def extract_launch_cwd(
     ``None`` (the caller is responsible for syncing down and setting up the
     local mirror).
     """
-    from ai_cli.remote import RemoteSpec, parse_remote_spec
+    from ai_cli.remote import parse_remote_spec
 
     if not args:
         return None, args, None
@@ -471,7 +473,7 @@ def _packaged_mux_binary() -> Path | None:
     import platform
 
     bin_dir = Path(__file__).resolve().parent / "bin"
-    system = platform.system().lower()   # 'darwin', 'linux'
+    system = platform.system().lower()  # 'darwin', 'linux'
     machine = platform.machine().lower()  # 'arm64', 'aarch64', 'x86_64'
 
     # Build candidate list: most specific first, generic fallback last.
@@ -515,7 +517,8 @@ def _ensure_installed_mux() -> Path | None:
     try:
         subprocess.run(
             ["xattr", "-cr", str(_INSTALLED_MUX)],
-            capture_output=True, timeout=5,
+            capture_output=True,
+            timeout=5,
         )
     except Exception:
         pass
@@ -534,10 +537,12 @@ def find_ai_mux() -> str | None:
     packaged = _packaged_mux_binary()
     if packaged:
         candidates.append(packaged)
-    candidates.extend([
-        repo_root / "mux" / "target" / "release" / "ai-mux",
-        Path("~/.local/bin/ai-mux").expanduser(),
-    ])
+    candidates.extend(
+        [
+            repo_root / "mux" / "target" / "release" / "ai-mux",
+            Path("~/.local/bin/ai-mux").expanduser(),
+        ]
+    )
     path_hit = shutil.which("ai-mux")
     if path_hit:
         candidates.insert(1, Path(path_hit))
