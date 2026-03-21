@@ -67,6 +67,7 @@ def test_push_package_uses_portable_rsync_chmod(monkeypatch, tmp_path: Path) -> 
         "chmod 700 /home/alice/.ai-cli/remote-sessions/codex-abc123/.ai-cli/bin/ai-prompt-editor"
         in calls[2][-1]
     )
+    assert any("ai-codex-personality-menu" in call[-1] for call in calls[2:])
     # Real-home push for tool config files
     real_home_pushes = [c for c in calls if any("__real_home__" in str(a) for a in c)]
     assert len(real_home_pushes) <= 1
@@ -180,6 +181,7 @@ def test_build_package_manifest_generates_shell_bootstrap_and_tmux_config(
     assert ".tmux.conf" in rels
     assert ".config/ai-cli/tmux.conf" in rels
     assert ".ai-cli/bin/ai-prompt-editor" in rels
+    assert ".ai-cli/bin/ai-codex-personality-menu" in rels
     project_prompt_rels = [rel for rel in rels if rel.startswith(".ai-cli/project-prompts/")]
     assert any(rel.endswith("/instructions.txt") for rel in project_prompt_rels)
     assert any(rel.endswith("/meta.json") for rel in project_prompt_rels)
@@ -195,6 +197,10 @@ def test_build_package_manifest_generates_shell_bootstrap_and_tmux_config(
     )
     assert (
         'AI_CLI_PROMPT_EDITOR_LAUNCHER="$HOME/.ai-cli/bin/ai-prompt-editor"'
+        in contents[".ai-cli/shell-common.sh"]
+    )
+    assert (
+        'AI_CLI_CODEX_PERSONALITY_PROMPT_FILE="$HOME/.ai-cli/instructions/codex-personality.txt"'
         in contents[".ai-cli/shell-common.sh"]
     )
     assert "trap '_ai_cli_bash_debug_hook' DEBUG" in contents[".bash_env"]
@@ -216,6 +222,7 @@ def test_build_package_manifest_generates_shell_bootstrap_and_tmux_config(
     assert "edit-project" in contents[".tmux.conf"]
     assert "bind -n M-Left previous-window" in contents[".tmux.conf"]
     assert "bind -n F5 select-window -t :3" not in contents[".tmux.conf"]
+    assert "bind -n F9 select-window -t :7" not in contents[".tmux.conf"]
     assert "source-file ~/.config/ai-cli/tmux.conf" in contents[".tmux.conf"]
 
 

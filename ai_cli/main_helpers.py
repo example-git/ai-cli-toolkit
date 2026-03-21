@@ -367,6 +367,18 @@ def parse_wrapper_overrides(args: list[str]) -> tuple[list[str], dict[str, Any]]
     )
     parser.add_argument("--ai-cli-rewrite-test-tag", dest="rewrite_test_tag")
     parser.add_argument(
+        "--ai-cli-gemini-canary-thought-injection",
+        dest="gemini_canary_thought_injection",
+        choices=("on", "off"),
+        default=None,
+    )
+    parser.add_argument(
+        "--ai-cli-canary-thought-injection",
+        dest="canary_thought_injection",
+        choices=("on", "off"),
+        default=None,
+    )
+    parser.add_argument(
         "--ai-cli-no-startup-context",
         dest="no_startup_context",
         action="store_true",
@@ -410,6 +422,8 @@ def parse_wrapper_overrides(args: list[str]) -> tuple[list[str], dict[str, Any]]
         "rewrite_test_mode": known.rewrite_test_mode,
         "developer_instructions_mode": known.developer_instructions_mode,
         "rewrite_test_tag": known.rewrite_test_tag,
+        "gemini_canary_thought_injection": known.gemini_canary_thought_injection,
+        "canary_thought_injection": known.canary_thought_injection,
         "no_startup_context": known.no_startup_context,
         "use_app_binary": known.use_app_binary,
         "remote_rsync": known.remote_rsync,

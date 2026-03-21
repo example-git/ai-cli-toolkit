@@ -19,6 +19,7 @@ _codex() {
 '*--config=[Override a configuration value that would otherwise be loaded from \`~/.codex/config.toml\`. Use a dotted path (\`foo.bar.baz\`) to override nested values. The \`value\` portion is parsed as TOML. If it fails to parse as TOML, the raw string is used as a literal]:key=value:_default' \
 '*--enable=[Enable a feature (repeatable). Equivalent to \`-c features.<name>=true\`]:FEATURE:_default' \
 '*--disable=[Disable a feature (repeatable). Equivalent to \`-c features.<name>=false\`]:FEATURE:_default' \
+'--remote=[Connect the app-server-backed TUI to a remote app server websocket endpoint]:ADDR:_default' \
 '*-i+[Optional image(s) to attach to the initial prompt]:FILE:_files' \
 '*--image=[Optional image(s) to attach to the initial prompt]:FILE:_files' \
 '-m+[Model the agent should use]:MODEL:_default' \
@@ -545,6 +546,7 @@ _arguments "${_arguments_options[@]}" : \
 (app-server)
 _arguments "${_arguments_options[@]}" : \
 '--listen=[Transport endpoint URL. Supported values\: \`stdio\://\` (default), \`ws\://IP\:PORT\`]:URL:_default' \
+'--session-source=[Session source stamped into new threads started by this app-server]:SOURCE:_default' \
 '*-c+[Override a configuration value that would otherwise be loaded from \`~/.codex/config.toml\`. Use a dotted path (\`foo.bar.baz\`) to override nested values. The \`value\` portion is parsed as TOML. If it fails to parse as TOML, the raw string is used as a literal]:key=value:_default' \
 '*--config=[Override a configuration value that would otherwise be loaded from \`~/.codex/config.toml\`. Use a dotted path (\`foo.bar.baz\`) to override nested values. The \`value\` portion is parsed as TOML. If it fails to parse as TOML, the raw string is used as a literal]:key=value:_default' \
 '*--enable=[Enable a feature (repeatable). Equivalent to \`-c features.<name>=true\`]:FEATURE:_default' \
@@ -590,6 +592,18 @@ _arguments "${_arguments_options[@]}" : \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
 ;;
+(generate-internal-json-schema)
+_arguments "${_arguments_options[@]}" : \
+'-o+[Output directory where internal JSON Schema artifacts will be written]:DIR:_files' \
+'--out=[Output directory where internal JSON Schema artifacts will be written]:DIR:_files' \
+'*-c+[Override a configuration value that would otherwise be loaded from \`~/.codex/config.toml\`. Use a dotted path (\`foo.bar.baz\`) to override nested values. The \`value\` portion is parsed as TOML. If it fails to parse as TOML, the raw string is used as a literal]:key=value:_default' \
+'*--config=[Override a configuration value that would otherwise be loaded from \`~/.codex/config.toml\`. Use a dotted path (\`foo.bar.baz\`) to override nested values. The \`value\` portion is parsed as TOML. If it fails to parse as TOML, the raw string is used as a literal]:key=value:_default' \
+'*--enable=[Enable a feature (repeatable). Equivalent to \`-c features.<name>=true\`]:FEATURE:_default' \
+'*--disable=[Disable a feature (repeatable). Equivalent to \`-c features.<name>=false\`]:FEATURE:_default' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+&& ret=0
+;;
 (help)
 _arguments "${_arguments_options[@]}" : \
 ":: :_codex__app-server__help_commands" \
@@ -607,6 +621,10 @@ _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
 (generate-json-schema)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(generate-internal-json-schema)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
@@ -698,7 +716,7 @@ _arguments "${_arguments_options[@]}" : \
 '--full-auto[Convenience alias for low-friction sandboxed automatic execution (network-disabled sandbox that can write to cwd and TMPDIR)]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'*::command -- Full command args to run under landlock:_default' \
+'*::command -- Full command args to run under the Linux sandbox:_default' \
 && ret=0
 ;;
 (landlock)
@@ -710,7 +728,7 @@ _arguments "${_arguments_options[@]}" : \
 '--full-auto[Convenience alias for low-friction sandboxed automatic execution (network-disabled sandbox that can write to cwd and TMPDIR)]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-'*::command -- Full command args to run under landlock:_default' \
+'*::command -- Full command args to run under the Linux sandbox:_default' \
 && ret=0
 ;;
 (windows)
@@ -979,6 +997,7 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (resume)
 _arguments "${_arguments_options[@]}" : \
+'--remote=[Connect the app-server-backed TUI to a remote app server websocket endpoint]:ADDR:_default' \
 '*-i+[Optional image(s) to attach to the initial prompt]:FILE:_files' \
 '*--image=[Optional image(s) to attach to the initial prompt]:FILE:_files' \
 '-m+[Model the agent should use]:MODEL:_default' \
@@ -1020,6 +1039,7 @@ never\:"Never ask for user approval Execution failures are immediately returned 
 ;;
 (fork)
 _arguments "${_arguments_options[@]}" : \
+'--remote=[Connect the app-server-backed TUI to a remote app server websocket endpoint]:ADDR:_default' \
 '*-i+[Optional image(s) to attach to the initial prompt]:FILE:_files' \
 '*--image=[Optional image(s) to attach to the initial prompt]:FILE:_files' \
 '-m+[Model the agent should use]:MODEL:_default' \
@@ -1425,6 +1445,10 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
+(generate-internal-json-schema)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
         esac
     ;;
 esac
@@ -1660,9 +1684,15 @@ _codex__app-server_commands() {
     local commands; commands=(
 'generate-ts:\[experimental\] Generate TypeScript bindings for the app server protocol' \
 'generate-json-schema:\[experimental\] Generate JSON Schema for the app server protocol' \
+'generate-internal-json-schema:\[internal\] Generate internal JSON Schema artifacts for Codex tooling' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'codex app-server commands' commands "$@"
+}
+(( $+functions[_codex__app-server__generate-internal-json-schema_commands] )) ||
+_codex__app-server__generate-internal-json-schema_commands() {
+    local commands; commands=()
+    _describe -t commands 'codex app-server generate-internal-json-schema commands' commands "$@"
 }
 (( $+functions[_codex__app-server__generate-json-schema_commands] )) ||
 _codex__app-server__generate-json-schema_commands() {
@@ -1679,9 +1709,15 @@ _codex__app-server__help_commands() {
     local commands; commands=(
 'generate-ts:\[experimental\] Generate TypeScript bindings for the app server protocol' \
 'generate-json-schema:\[experimental\] Generate JSON Schema for the app server protocol' \
+'generate-internal-json-schema:\[internal\] Generate internal JSON Schema artifacts for Codex tooling' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'codex app-server help commands' commands "$@"
+}
+(( $+functions[_codex__app-server__help__generate-internal-json-schema_commands] )) ||
+_codex__app-server__help__generate-internal-json-schema_commands() {
+    local commands; commands=()
+    _describe -t commands 'codex app-server help generate-internal-json-schema commands' commands "$@"
 }
 (( $+functions[_codex__app-server__help__generate-json-schema_commands] )) ||
 _codex__app-server__help__generate-json-schema_commands() {
@@ -2033,8 +2069,14 @@ _codex__help__app-server_commands() {
     local commands; commands=(
 'generate-ts:\[experimental\] Generate TypeScript bindings for the app server protocol' \
 'generate-json-schema:\[experimental\] Generate JSON Schema for the app server protocol' \
+'generate-internal-json-schema:\[internal\] Generate internal JSON Schema artifacts for Codex tooling' \
     )
     _describe -t commands 'codex help app-server commands' commands "$@"
+}
+(( $+functions[_codex__help__app-server__generate-internal-json-schema_commands] )) ||
+_codex__help__app-server__generate-internal-json-schema_commands() {
+    local commands; commands=()
+    _describe -t commands 'codex help app-server generate-internal-json-schema commands' commands "$@"
 }
 (( $+functions[_codex__help__app-server__generate-json-schema_commands] )) ||
 _codex__help__app-server__generate-json-schema_commands() {
@@ -2264,7 +2306,7 @@ _codex__help__review_commands() {
 _codex__help__sandbox_commands() {
     local commands; commands=(
 'macos:Run a command under Seatbelt (macOS only)' \
-'linux:Run a command under Landlock+seccomp (Linux only)' \
+'linux:Run a command under the Linux sandbox (bubblewrap by default)' \
 'windows:Run a command under Windows restricted token (Windows only)' \
     )
     _describe -t commands 'codex help sandbox commands' commands "$@"
@@ -2441,8 +2483,8 @@ _codex__sandbox_commands() {
     local commands; commands=(
 'macos:Run a command under Seatbelt (macOS only)' \
 'seatbelt:Run a command under Seatbelt (macOS only)' \
-'linux:Run a command under Landlock+seccomp (Linux only)' \
-'landlock:Run a command under Landlock+seccomp (Linux only)' \
+'linux:Run a command under the Linux sandbox (bubblewrap by default)' \
+'landlock:Run a command under the Linux sandbox (bubblewrap by default)' \
 'windows:Run a command under Windows restricted token (Windows only)' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
@@ -2452,7 +2494,7 @@ _codex__sandbox_commands() {
 _codex__sandbox__help_commands() {
     local commands; commands=(
 'macos:Run a command under Seatbelt (macOS only)' \
-'linux:Run a command under Landlock+seccomp (Linux only)' \
+'linux:Run a command under the Linux sandbox (bubblewrap by default)' \
 'windows:Run a command under Windows restricted token (Windows only)' \
 'help:Print this message or the help of the given subcommand(s)' \
     )

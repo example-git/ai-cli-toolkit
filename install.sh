@@ -26,7 +26,7 @@ Options:
   --no-alias           Do not create aliases
   --install-tools      Install underlying CLI tools (claude, codex, copilot, gemini)
   --install-tool TOOL  Install a specific CLI tool (repeatable)
-  --method METHOD      Install method for tools (npm, brew, macports, curl)
+  --method METHOD      Install method for tools (for example: npm, brew, macports, curl, stable, prerelease, latest, preview, nightly)
   --auto-install-deps  Allow installer to install required system deps (tmux)
   --yes, -y            Assume yes for interactive confirmations
   --non-interactive    Never prompt; use provided flags only
@@ -117,6 +117,19 @@ save_config(cfg)
 PY
 }
 
+tool_managed_binary() {
+  local tool="$1"
+  python3 - "$tool" <<'PY'
+import sys
+from ai_cli.tools import load_registry
+
+tool = sys.argv[1]
+spec = load_registry().get(tool)
+if spec and spec.managed_binary:
+    print(spec.resolve_binary(spec.managed_binary))
+PY
+}
+
 copy_completions() {
   local comp_src="${SCRIPT_DIR}/completions"
 
@@ -192,7 +205,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --method)
       shift
-      if [[ $# -eq 0 ]]; then echo "--method requires a method (npm, brew, macports, curl)" >&2; exit 1; fi
+      if [[ $# -eq 0 ]]; then echo "--method requires a method (for example: npm, brew, macports, curl, stable, prerelease, latest, preview, nightly)" >&2; exit 1; fi
       install_method="$1"
       ;;
     --auto-install-deps) auto_install_deps=true ;;
@@ -359,8 +372,11 @@ if [ "${#alias_targets[@]}" -gt 0 ]; then
     done
 
     if $enabled_alias; then
+      managed_bin="$(tool_managed_binary "$tool")"
       current_bin="$(command -v "$tool" || true)"
-      if [ -n "$current_bin" ] && [ "$current_bin" != "${ALIAS_DIR}/${tool}" ]; then
+      if [ -n "$managed_bin" ]; then
+        set_config_value "$tool" "$managed_bin" "true"
+      elif [ -n "$current_bin" ] && [ "$current_bin" != "${ALIAS_DIR}/${tool}" ]; then
         set_config_value "$tool" "$current_bin" "true"
       else
         set_config_value "$tool" "__KEEP__" "true"
@@ -384,12 +400,18 @@ declare -A TOOL_METHODS
 TOOL_METHODS=(
   [claude]="native:Native installer|brew:Homebrew|npm:npm"
   [codex]="npm:npm|brew:Homebrew"
-  [copilot]="npm:npm|brew:Homebrew"
-  [gemini]="npm:npm|brew:Homebrew|macports:MacPorts"
+  [copilot]="stable:Stable|prerelease:Prerelease"
+  [gemini]="latest:Latest|preview:Preview|nightly:Nightly|brew:Homebrew|macports:MacPorts"
 )
 
 method_available() {
-  case "$1" in native) $has_curl ;; npm|npx) $has_npm ;; brew) $has_brew ;; macports) $has_port ;; *) return 0 ;; esac
+  case "$1" in
+    native) $has_curl ;;
+    npm|npx|latest|preview|nightly) $has_npm ;;
+    brew) $has_brew ;;
+    macports) $has_port ;;
+    *) return 0 ;;
+  esac
 }
 
 auto_detect_method() {

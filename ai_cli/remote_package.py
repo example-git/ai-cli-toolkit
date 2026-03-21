@@ -340,6 +340,7 @@ def _render_shell_common(
         export AI_CLI_GLOBAL_PROMPT_FILE="$HOME/.ai-cli/system_instructions.txt"
         export AI_CLI_TOOL_PROMPT_FILE="$HOME/.ai-cli/instructions/{tool_name}.txt"
         export AI_CLI_PROJECT_PROMPT_FILE="{project_prompt_remote_path}"
+        export AI_CLI_CODEX_PERSONALITY_PROMPT_FILE="$HOME/.ai-cli/instructions/codex-personality.txt"
         export AI_CLI_PYTHON="${{AI_CLI_PYTHON:-python3}}"
         export AI_CLI_PROMPT_EDITOR_LAUNCHER="$HOME/.ai-cli/bin/ai-prompt-editor"
         export AI_CLI_REMOTE_COMMAND_LOG="$HOME/.ai-cli/logs/shell-commands.log"
@@ -530,7 +531,6 @@ def _render_tmux_conf(tool_name: str, remote_spec: RemoteSpec) -> str:
         "bind -n F4 select-window -t :2",
         "bind -n F10 select-window -t :5",
         "bind -n F11 select-window -t :6",
-        "bind -n F9 select-window -t :7",
         _render_tmux_editor_binding("F5", "edit-global", edit_global_cmd),
         _render_tmux_editor_binding("F6", "edit-base", edit_base_cmd),
         _render_tmux_editor_binding("F7", "edit-tool", edit_tool_cmd),
@@ -791,6 +791,11 @@ def build_package_manifest(
         Path(__file__).resolve().parent / "prompt_editor_launcher.py",
         ".ai-cli/bin/ai-prompt-editor",
     )
+    _add_if_exists(
+        entries,
+        Path(__file__).resolve().parent / "codex_personality_menu.py",
+        ".ai-cli/bin/ai-codex-personality-menu",
+    )
     if ai_mux_binary is not None:
         _add_if_exists(
             entries,
@@ -905,6 +910,15 @@ def push_package(
             [
                 *_ssh_base(remote_spec),
                 f"chmod 700 {shlex.quote(package.session_dir + '/.ai-cli/bin/ai-prompt-editor')} 2>/dev/null || true",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        subprocess.run(
+            [
+                *_ssh_base(remote_spec),
+                f"chmod 700 {shlex.quote(package.session_dir + '/.ai-cli/bin/ai-codex-personality-menu')} 2>/dev/null || true",
             ],
             capture_output=True,
             text=True,

@@ -19,13 +19,13 @@ _ai_cli_fill_tool_data() {
   dir_flags=()
   case "$tool" in
     claude)
-      native_flags=(--add-dir --agent --agents --allow-dangerously-skip-permissions --allowedTools --append-system-prompt --betas --chrome --continue --dangerously-skip-permissions --debug --debug-file --disable-slash-commands --disallowedTools --effort --fallback-model --file --fork-session --from-pr --help --ide --include-partial-messages --input-format --json-schema --max-budget-usd --mcp-config --mcp-debug --model --no-chrome --no-session-persistence --output-format --permission-mode --plugin-dir --print --replay-user-messages --resume --session-id --setting-sources --settings --strict-mcp-config --system-prompt --tmux --tools --verbose --version --worktree -c -d -h -p -r -v -w)
-      native_subcommands=(auth doctor mcp plugin setup-token)
+      native_flags=(--add-dir --agent --agents --allow-dangerously-skip-permissions --allowedTools --append-system-prompt --bare --betas --brief --chrome --continue --dangerously-skip-permissions --debug --debug-file --disable-slash-commands --disallowedTools --effort --fallback-model --file --fork-session --from-pr --help --ide --include-partial-messages --input-format --json-schema --max-budget-usd --mcp-config --mcp-debug --model --name --no-chrome --no-session-persistence --output-format --permission-mode --plugin-dir --print --replay-user-messages --resume --session-id --setting-sources --settings --strict-mcp-config --system-prompt --tmux --tools --verbose --version --worktree -c -d -h -n -p -r -v -w)
+      native_subcommands=(auth auto-mode doctor mcp setup-token)
       file_flags=(--debug-file --file --json-schema --mcp-config --settings)
       dir_flags=(--add-dir --plugin-dir)
       ;;
     codex)
-      native_flags=(--add-dir --ask-for-approval --cd --config --dangerously-bypass-approvals-and-sandbox --disable --enable --full-auto --help --image --local-provider --model --no-alt-screen --oss --profile --sandbox --search --version -C -V -a -c -h -i -m -p -s)
+      native_flags=(--add-dir --ask-for-approval --cd --config --dangerously-bypass-approvals-and-sandbox --disable --enable --full-auto --help --image --local-provider --model --no-alt-screen --oss --profile --remote --sandbox --search --version -C -V -a -c -h -i -m -p -s)
       native_subcommands=(exec review login logout mcp mcp-server app-server app completion sandbox debug apply resume fork cloud features help)
       file_flags=(--config --local-provider --profile)
       dir_flags=(--add-dir)
@@ -37,7 +37,7 @@ _ai_cli_fill_tool_data() {
       dir_flags=(--add-dir --config-dir --log-dir --plugin-dir)
       ;;
     gemini)
-      native_flags=(--accept-raw-output-risk --allowed-mcp-server-names --allowed-tools --approval-mode --debug --delete-session --experimental-acp --extensions --help --include-directories --list-extensions --list-sessions --model --output-format --policy --prompt --prompt-interactive --raw-output --resume --sandbox --screen-reader --version --yolo -d -e -h -i -l -m -o -p -r -s -v -y)
+      native_flags=()
       native_subcommands=()
       file_flags=()
       dir_flags=()

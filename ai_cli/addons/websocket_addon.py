@@ -22,6 +22,8 @@ if _addon_dir not in sys.path:
 
 from prompt_builder import (  # noqa: E402
     build_guidelines_text,
+    format_prior_user_message,
+    load_canary_thought_raw,
     log,
     register_prompt_options,
 )
@@ -122,12 +124,85 @@ class WebSocketInstructionInjector:
             log(log_file, "WebSocket passthrough - not injecting")
             return
 
+        # Canary thought injection — inject a synthetic prior thinking turn
+        # before the first user message so the model echoes the compliance thought.
+        canary_raw = load_canary_thought_raw()
+        if canary_raw:
+            try:
+                canary_block = json.loads(canary_raw)
+            except (json.JSONDecodeError, ValueError):
+                canary_block = None
+            if isinstance(canary_block, dict) and canary_block.get("type") == "thinking":
+                msg_list = None
+                if "messages" in data and isinstance(data["messages"], list):
+                    msg_list = data["messages"]
+                elif "input" in data and isinstance(data["input"], list):
+                    msg_list = data["input"]
+                if msg_list is not None:
+                    first_user_idx = next(
+                        (i for i, m in enumerate(msg_list)
+                         if isinstance(m, dict) and m.get("role") == "user"),
+                        None,
+                    )
+                    if first_user_idx is not None:
+                        msg_list.insert(first_user_idx, {
+                            "role": "assistant",
+                            "content": [canary_block],
+                        })
+                        msg_list.insert(first_user_idx, {
+                            "role": "user",
+                            "content": [{"type": "text", "text": "."}],
+                        })
+                        log(log_file, "WebSocket injected canary thinking turn")
+
         instructions = build_guidelines_text()
-        if not instructions:
+        
+        # Best effort extraction of last user message
+        last_user_msg = ""
+        candidates = []
+        if "messages" in data and isinstance(data["messages"], list):
+            candidates = data["messages"]
+        elif "input" in data and isinstance(data["input"], list):
+            candidates = data["input"]
+        elif "contents" in data and isinstance(data["contents"], list):
+            candidates = data["contents"]
+            
+        for msg in reversed(candidates):
+            if isinstance(msg, dict):
+                role = msg.get("role")
+                if role == "user":
+                    content = msg.get("content")
+                    if isinstance(content, str):
+                        last_user_msg = content
+                        break
+                    elif isinstance(content, list):
+                        parts = []
+                        for item in content:
+                            if isinstance(item, str):
+                                parts.append(item)
+                            elif isinstance(item, dict) and item.get("type") == "text":
+                                parts.append(item.get("text", ""))
+                        last_user_msg = "\n".join(parts)
+                        break
+                    elif "parts" in msg:
+                        parts = msg.get("parts", [])
+                        text_parts = []
+                        for part in parts:
+                            if isinstance(part, dict) and "text" in part:
+                                 text_parts.append(part.get("text", ""))
+                        last_user_msg = "\n".join(text_parts)
+                        break
+
+        formatted_msg = format_prior_user_message(last_user_msg)
+        full_instructions = instructions
+        if formatted_msg:
+             full_instructions = f"{instructions}\n\n{formatted_msg}"
+
+        if not full_instructions:
             return
 
-        log(log_file, f"WebSocket injecting instructions (chars={len(instructions)})")
-        modified = self._inject_into_frame(data, instructions)
+        log(log_file, f"WebSocket injecting instructions (chars={len(full_instructions)})")
+        modified = self._inject_into_frame(data, full_instructions)
         message.content = json.dumps(modified).encode("utf-8")
         self._injected_flows.add(flow_id)
         log(log_file, "WebSocket injection complete")

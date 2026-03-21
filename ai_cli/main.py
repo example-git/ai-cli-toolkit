@@ -91,13 +91,187 @@ def _cleanup_session_files(session_id: str) -> None:
     _mh_cleanup_session_files(session_id)
 
 
-def _install_prompt_editor_launcher() -> str:
-    src = Path(__file__).resolve().parent / "prompt_editor_launcher.py"
-    dest = Path("~/.ai-cli/bin/ai-prompt-editor").expanduser()
+def _tracked_session_dir() -> Path:
+    return Path("~/.ai-cli/.sessions").expanduser()
+
+
+def _tracked_session_path(session_id: str) -> Path:
+    return _tracked_session_dir() / f"{session_id}.json"
+
+
+_TRACKED_PID_FIELDS: dict[str, str] = {
+    "wrapper_pid": "wrapper",
+    "proxy_pid": "proxy",
+    "mux_pid": "mux",
+}
+
+
+def _tracked_session_pid_path(session_id: str, pid_kind: str) -> Path:
+    return _tracked_session_dir() / f"{session_id}.{pid_kind}.pid"
+
+
+def _read_tracked_pid_file(path: Path) -> int:
+    try:
+        raw = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return 0
+    return int(raw) if raw.isdigit() else 0
+
+
+def _sync_tracked_pid_files(session_id: str, payload: dict[str, Any]) -> None:
+    for field_name, pid_kind in _TRACKED_PID_FIELDS.items():
+        path = _tracked_session_pid_path(session_id, pid_kind)
+        pid = int(payload.get(field_name, 0) or 0)
+        try:
+            if pid > 0:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(f"{pid}\n", encoding="utf-8")
+            else:
+                path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _write_tracked_session(session_id: str, payload: dict[str, Any]) -> None:
+    path = _tracked_session_path(session_id)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        existing: dict[str, Any] = {}
+        if path.is_file():
+            existing = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(existing, dict):
+                existing = {}
+        existing.update(payload)
+        existing["session_id"] = session_id
+        existing.setdefault("wrapper_pid", os.getpid())
+        path.write_text(json.dumps(existing, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        _sync_tracked_pid_files(session_id, existing)
+    except (OSError, json.JSONDecodeError):
+        pass
+
+
+def _remove_tracked_session(session_id: str) -> None:
+    try:
+        _tracked_session_path(session_id).unlink(missing_ok=True)
+    except OSError:
+        pass
+    for pid_kind in _TRACKED_PID_FIELDS.values():
+        try:
+            _tracked_session_pid_path(session_id, pid_kind).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _list_tracked_sessions() -> list[dict[str, Any]]:
+    root = _tracked_session_dir()
+    if not root.is_dir():
+        return []
+    payloads: dict[str, dict[str, Any]] = {}
+    for entry in sorted(root.glob("*.json")):
+        try:
+            payload = json.loads(entry.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, dict):
+            session_id = str(payload.get("session_id", "")).strip() or entry.stem
+            payload["session_id"] = session_id
+            payloads[session_id] = payload
+    for entry in sorted(root.glob("*.pid")):
+        name = entry.name
+        for field_name, pid_kind in _TRACKED_PID_FIELDS.items():
+            suffix = f".{pid_kind}.pid"
+            if not name.endswith(suffix):
+                continue
+            session_id = name[: -len(suffix)].strip()
+            if not session_id:
+                break
+            payload = payloads.setdefault(session_id, {"session_id": session_id})
+            pid = _read_tracked_pid_file(entry)
+            if pid > 0:
+                payload[field_name] = pid
+            break
+    return [payloads[key] for key in sorted(payloads)]
+
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _tmux_has_session(session_name: str, socket_name: str = "ai-mux") -> bool:
+    if not session_name:
+        return False
+    try:
+        code = subprocess.call(
+            ["tmux", "-L", socket_name, "has-session", "-t", session_name],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError:
+        return False
+    return code == 0
+
+
+def _is_ai_cli_proxy_command(cmd: str) -> bool:
+    lowered = (cmd or "").lower()
+    if "mitmdump" not in lowered and "mitmproxy" not in lowered:
+        return False
+    return (
+        "traffic_log_addon.py" in lowered
+        or "system_prompt_addon.py" in lowered
+        or "wrapper_log_file=" in lowered
+    )
+
+
+def _is_ai_mux_command(cmd: str) -> bool:
+    lowered = (cmd or "").lower()
+    if "/.ai-cli/bin/ai-mux" in lowered or lowered.endswith("/ai-mux"):
+        return True
+    return "tmux" in lowered and "-l ai-mux" in lowered
+
+
+def _is_ai_cli_agent_command(cmd: str) -> bool:
+    stripped = (cmd or "").strip()
+    if not stripped:
+        return False
+    lowered = stripped.lower()
+    first = Path(stripped.split(None, 1)[0]).name.lower()
+    if first in {"ai-cli", "claude", "codex", "copilot", "gemini"}:
+        return True
+    return any(
+        needle in lowered
+        for needle in (
+            "python -m ai_cli",
+            "python3 -m ai_cli",
+            " @google/gemini-cli",
+            "/@google/gemini-cli/",
+        )
+    )
+
+
+def _install_helper_script(source_name: str, dest_name: str) -> str:
+    src = Path(__file__).resolve().parent / source_name
+    dest = Path("~/.ai-cli/bin").expanduser() / dest_name
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dest)
     os.chmod(dest, 0o755)
     return str(dest)
+
+
+def _install_prompt_editor_launcher() -> str:
+    return _install_helper_script("prompt_editor_launcher.py", "ai-prompt-editor")
+
+
+def _install_codex_personality_menu() -> str:
+    return _install_helper_script(
+        "codex_personality_menu.py",
+        "ai-codex-personality-menu",
+    )
 
 
 def _spawn_detached_proxy_watcher(
@@ -198,6 +372,21 @@ def _resolve_tool_prompt_file(config: dict[str, Any], tool_name: str) -> str:
     if not path_value:
         path_value = str(Path("~/.ai-cli/instructions").expanduser() / f"{tool_name}.txt")
     return resolve_instructions_file(path_value)
+
+
+def _resolve_codex_personality_file() -> str:
+    return resolve_instructions_file(
+        str(Path("~/.ai-cli/instructions/codex-personality.txt").expanduser())
+    )
+
+
+def _resolve_canary_thought_file(tool_name: str) -> str:
+    """Return the path to the per-tool static canary thought file.
+
+    The file is NOT created if absent — the proxy addon silently skips
+    injection when read_text_file() returns an empty string.
+    """
+    return str(Path(f"~/.ai-cli/canary-thought-{tool_name}.json").expanduser())
 
 
 _PROXY_STRIP_KEYS = (
@@ -376,6 +565,8 @@ def run_tool(tool_name: str, args: list[str]) -> int:
         or wrapper_overrides["rewrite_test_mode"] is not None
         or wrapper_overrides["developer_instructions_mode"] is not None
         or bool((wrapper_overrides["rewrite_test_tag"] or "").strip())
+        or wrapper_overrides["gemini_canary_thought_injection"] is not None
+        or wrapper_overrides["canary_thought_injection"] is not None
         or bool(wrapper_overrides["no_startup_context"])
         or bool(wrapper_overrides.get("use_app_binary"))
     )
@@ -468,6 +659,12 @@ def run_tool(tool_name: str, args: list[str]) -> int:
     )
 
     tool_prompt_file = _resolve_tool_prompt_file(config, tool_name)
+    codex_personality_file = (
+        _resolve_codex_personality_file()
+        if tool_name == "codex"
+        else ""
+    )
+    canary_thought_file = _resolve_canary_thought_file(tool_name)
     project_prompt_file = ensure_project_instructions_file(
         project_cwd=str(effective_cwd),
         remote_spec=remote_spec.display if remote_spec is not None else "",
@@ -554,6 +751,26 @@ def run_tool(tool_name: str, args: list[str]) -> int:
             codex_developer_prompt_file=(
                 tool_prompt_file if tool_name == "codex" else ""
             ),
+            codex_personality_file=codex_personality_file,
+            gemini_canary_thought_injection_enabled=(
+                (
+                    (wrapper_overrides["gemini_canary_thought_injection"] or "").strip().lower()
+                    == "on"
+                )
+                if tool_name == "gemini"
+                and wrapper_overrides["gemini_canary_thought_injection"] is not None
+                else (
+                    bool(tool_cfg.get("canary_thought_injection", True))
+                    if tool_name == "gemini"
+                    else None
+                )
+            ),
+            canary_thought_injection_enabled=(
+                (wrapper_overrides["canary_thought_injection"] or "").strip().lower() == "on"
+                if wrapper_overrides["canary_thought_injection"] is not None
+                else bool(tool_cfg.get("canary_thought_injection", True))
+            ),
+            canary_thought_file=canary_thought_file,
             traffic_caller=tool_name,
             traffic_max_age_days=retention_cfg["traffic_days"],
             traffic_redact=privacy_cfg["redact_traffic_bodies"],
@@ -595,6 +812,11 @@ def run_tool(tool_name: str, args: list[str]) -> int:
     env["AI_CLI_PROJECT_PROMPT_FILE"] = str(project_prompt_file)
     env["AI_CLI_PYTHON"] = sys.executable or "python3"
     env["AI_CLI_PROMPT_EDITOR_LAUNCHER"] = prompt_editor_launcher
+    if tool_name == "codex":
+        codex_personality_menu = _install_codex_personality_menu()
+        env["AI_CLI_CODEX_PERSONALITY_MENU"] = codex_personality_menu
+        if codex_personality_file:
+            env["AI_CLI_CODEX_PERSONALITY_PROMPT_FILE"] = codex_personality_file
     if remote_spec is not None:
         env["AI_CLI_REMOTE_SPEC"] = remote_spec.display
     if proxy_enabled and mitm_proc is not None:
@@ -622,6 +844,20 @@ def run_tool(tool_name: str, args: list[str]) -> int:
                 "Codex external editor disabled for wrapper session "
                 "(set AI_CLI_CODEX_DISABLE_EXTERNAL_EDITOR=0 to re-enable).",
             )
+
+    _write_tracked_session(
+        session_id,
+        {
+            "tool": tool_name,
+            "cwd": str(effective_cwd),
+            "wrapper_pid": os.getpid(),
+            "proxy_pid": int(env.get("AI_CLI_PROXY_PID", "0") or 0),
+            "proxy_url": env.get("AI_CLI_PROXY_URL", ""),
+            "tmux_session": "",
+            "tmux_socket": "ai-mux",
+            "mux_pid": 0,
+        },
+    )
 
     # ── Remote session mode ─────────────────────────────────────────────
     # Proxy is running locally; launch the tool on the remote with an SSH
@@ -731,6 +967,10 @@ def run_tool(tool_name: str, args: list[str]) -> int:
                 "ENV": f"{package.session_dir}/.shrc",
                 "KSHRC": f"{package.session_dir}/.kshrc",
             }
+            if tool_name == "codex":
+                remote_mux_env["AI_CLI_CODEX_PERSONALITY_PROMPT_FILE"] = (
+                    f"{package.session_dir}/.ai-cli/instructions/codex-personality.txt"
+                )
             if _effective_proxy_port:
                 proxy_url = f"http://127.0.0.1:{_effective_proxy_port}"
                 remote_ca = f"{package.session_dir}/.ai-cli/remote-ca.pem"
@@ -850,6 +1090,7 @@ def run_tool(tool_name: str, args: list[str]) -> int:
                     except Exception:
                         pass
                 _cleanup_session_files(session_id)
+                _remove_tracked_session(session_id)
                 append_log(log_path, "Wrapper stop (remote session, packaged)")
             return exit_code
 
@@ -900,23 +1141,13 @@ def run_tool(tool_name: str, args: list[str]) -> int:
                 except Exception:
                     pass
             _cleanup_session_files(session_id)
+            _remove_tracked_session(session_id)
             append_log(log_path, "Wrapper stop (remote session, no-package)")
         return exit_code
 
     # Run the tool via PTY multiplexer (TTY) or plain subprocess (non-TTY)
     def _truthy_env(name: str) -> bool:
         return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
-
-    def _tmux_has_session(session_name: str) -> bool:
-        try:
-            code = subprocess.call(
-                ["tmux", "-L", "ai-mux", "has-session", "-t", session_name],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except OSError:
-            return False
-        return code == 0
 
     exit_code = 1
     keep_proxy_running = False
@@ -954,18 +1185,19 @@ def run_tool(tool_name: str, args: list[str]) -> int:
                         "cwd": str(effective_cwd),
                         "primary": False,
                     },
-                    {
-                        "label": "status",
-                        "cmd": [python, "-m", "ai_cli", "status"],
-                        "env": base_env,
-                        "cwd": str(effective_cwd),
-                        "primary": False,
-                    },
                 ]
             }
 
             config_path = ""
             try:
+                owned_session = f"ai-{session_id}"
+                _write_tracked_session(
+                    session_id,
+                    {
+                        "tmux_session": owned_session,
+                        "tmux_socket": "ai-mux",
+                    },
+                )
                 with tempfile.NamedTemporaryFile(
                     mode="w",
                     encoding="utf-8",
@@ -982,10 +1214,15 @@ def run_tool(tool_name: str, args: list[str]) -> int:
                 mux_proc = subprocess.Popen(
                     [ai_mux_bin, "--config", config_path, "--session-name", f"ai-{session_id}"]
                 )
+                _write_tracked_session(
+                    session_id,
+                    {
+                        "mux_pid": mux_proc.pid,
+                    },
+                )
                 exit_code = mux_proc.wait()
                 append_log(log_path, f"ai-mux exit code: {exit_code}")
 
-                owned_session = f"ai-{session_id}"
                 if _tmux_has_session(owned_session):
                     remote_sync_deferred = True
                     if proxy_enabled and mitm_proc is not None:
@@ -1066,6 +1303,7 @@ def run_tool(tool_name: str, args: list[str]) -> int:
                 except Exception:
                     pass
             _cleanup_session_files(session_id)
+            _remove_tracked_session(session_id)
             append_log(log_path, "Wrapper stop")
 
 
@@ -1192,11 +1430,53 @@ def cmd_status() -> int:
     return 0
 
 
-def _collect_cleanup_targets() -> list[dict[str, Any]]:
+def _collect_cleanup_targets(include_all: bool = False) -> list[dict[str, Any]]:
     targets: list[dict[str, Any]] = []
-    seen_proxy_pids: set[int] = set()
+    tracked_session_names: set[str] = set()
+    seen_pids: set[int] = {os.getpid()}
+
+    for payload in _list_tracked_sessions():
+        session_id = str(payload.get("session_id", "")).strip()
+        session_name = str(payload.get("tmux_session", "")).strip()
+        tool = str(payload.get("tool", "?")).strip() or "?"
+        cwd = str(payload.get("cwd", "?")).strip() or "?"
+        proxy_pid = int(payload.get("proxy_pid", 0) or 0)
+        wrapper_pid = int(payload.get("wrapper_pid", 0) or 0)
+        mux_pid = int(payload.get("mux_pid", 0) or 0)
+        tmux_running = _tmux_has_session(session_name, socket_name="ai-mux")
+        proxy_running = _pid_alive(proxy_pid)
+        session_part = session_name if session_name else "none"
+        status_parts = [
+            f"tmux={'running' if tmux_running else 'missing'}:{session_part}",
+            f"proxy={'running' if proxy_running else 'missing'}:{proxy_pid or 0}",
+        ]
+        if wrapper_pid > 0:
+            status_parts.append(f"wrapper={wrapper_pid}")
+        if mux_pid > 0:
+            status_parts.append(f"mux={mux_pid}")
+        targets.append(
+            {
+                "kind": "tracked",
+                "session_id": session_id,
+                "payload": payload,
+                "label": (
+                    f"[tracked] session_id={session_id or '?'} "
+                    f"(tool={tool}, cwd={cwd}, {', '.join(status_parts)})"
+                ),
+            }
+        )
+        if session_name:
+            tracked_session_names.add(session_name)
+        for pid in (proxy_pid, wrapper_pid, mux_pid):
+            if pid > 0:
+                seen_pids.add(pid)
+
+    if not include_all:
+        return targets
 
     for session_name in _tmux_list_sessions(socket_name="ai-mux"):
+        if session_name in tracked_session_names:
+            continue
         session_env = _tmux_session_env(session_name, socket_name="ai-mux")
         tool = session_env.get("AI_CLI_TOOL", "?")
         cwd = session_env.get("AI_CLI_WORKDIR", "?")
@@ -1208,13 +1488,13 @@ def _collect_cleanup_targets() -> list[dict[str, Any]]:
                 "session_name": session_name,
                 "session_env": session_env,
                 "label": (
-                    f"[tmux] session={session_name} "
+                    f"[mux-scan] session={session_name} "
                     f"(tool={tool}, cwd={cwd}{proxy_part})"
                 ),
             }
         )
         if proxy_pid_raw.isdigit():
-            seen_proxy_pids.add(int(proxy_pid_raw))
+            seen_pids.add(int(proxy_pid_raw))
 
     try:
         probe = subprocess.run(
@@ -1237,19 +1517,37 @@ def _collect_cleanup_targets() -> list[dict[str, Any]]:
                 continue
             pid = int(parts[0])
             cmd = parts[1] if len(parts) > 1 else ""
-            lowered = cmd.lower()
-            if "mitmdump" not in lowered and "mitmproxy" not in lowered:
+            if pid in seen_pids:
                 continue
-            if pid in seen_proxy_pids:
+            if _is_ai_cli_proxy_command(cmd):
+                targets.append(
+                    {
+                        "kind": "proxy",
+                        "pid": pid,
+                        "label": f"[proxy-scan] pid={pid} cmd={cmd}",
+                    }
+                )
+                seen_pids.add(pid)
                 continue
-            targets.append(
-                {
-                    "kind": "proxy",
-                    "pid": pid,
-                    "label": f"[proxy] pid={pid} cmd={cmd}",
-                }
-            )
-            seen_proxy_pids.add(pid)
+            if _is_ai_mux_command(cmd):
+                targets.append(
+                    {
+                        "kind": "mux_process",
+                        "pid": pid,
+                        "label": f"[mux-proc] pid={pid} cmd={cmd}",
+                    }
+                )
+                seen_pids.add(pid)
+                continue
+            if _is_ai_cli_agent_command(cmd):
+                targets.append(
+                    {
+                        "kind": "agent",
+                        "pid": pid,
+                        "label": f"[agent-scan] pid={pid} cmd={cmd}",
+                    }
+                )
+                seen_pids.add(pid)
 
     return targets
 
@@ -1290,8 +1588,8 @@ def cmd_cleanup(args: list[str]) -> int:
 
     if known.help:
         print("Usage: ai-cli cleanup [--list] [--all | --select 1,2,3] [-y]")
-        print("  --list        Show detected tmux/proxy targets without killing")
-        print("  --all         Select all detected targets")
+        print("  --list        Show detected tracked-session targets without cleaning")
+        print("  --all         Deep-scan and kill tracked sessions plus host ai-mux/agent processes")
         print("  --select      Comma-separated item numbers from the target list")
         print("  -y, --yes     Skip confirmation prompt")
         return 0
@@ -1300,9 +1598,9 @@ def cmd_cleanup(args: list[str]) -> int:
         print(f"Unknown cleanup arguments: {' '.join(unknown)}", file=sys.stderr)
         return 1
 
-    targets = _collect_cleanup_targets()
+    targets = _collect_cleanup_targets(include_all=known.all)
     if not targets:
-        print("No ai-cli tmux/proxy cleanup targets found.")
+        print("No ai-cli cleanup targets found.")
         return 0
 
     print("Cleanup targets:")
@@ -1351,6 +1649,31 @@ def cmd_cleanup(args: list[str]) -> int:
     killed = 0
     for target in selected_targets:
         kind = str(target.get("kind", ""))
+        if kind == "tracked":
+            payload = target.get("payload", {})
+            if not isinstance(payload, dict):
+                continue
+            session_id = str(target.get("session_id", "")).strip()
+            session_name = str(payload.get("tmux_session", "")).strip()
+            proxy_pid = int(payload.get("proxy_pid", 0) or 0)
+            if session_name and _tmux_has_session(session_name, socket_name="ai-mux"):
+                session_env = _tmux_session_env(session_name, socket_name="ai-mux")
+                _replace_existing_tmux_session(
+                    session_name,
+                    session_env,
+                    cleanup_log,
+                    socket_name="ai-mux",
+                )
+                print(f"Cleaned tracked ai-mux session: {session_name}")
+            elif proxy_pid > 0:
+                _terminate_pid(proxy_pid)
+                append_log(cleanup_log, f"Stopped tracked standalone proxy pid: {proxy_pid}")
+                print(f"Stopped tracked proxy PID: {proxy_pid}")
+            if session_id:
+                _cleanup_session_files(session_id)
+                _remove_tracked_session(session_id)
+            killed += 1
+            continue
         if kind == "tmux":
             session_name = str(target.get("session_name", ""))
             session_env = target.get("session_env", {})
@@ -1371,9 +1694,25 @@ def cmd_cleanup(args: list[str]) -> int:
                 append_log(cleanup_log, f"Killed standalone proxy pid: {pid}")
                 print(f"Killed proxy PID: {pid}")
                 killed += 1
+            continue
+        if kind == "mux_process":
+            pid = int(target.get("pid", 0) or 0)
+            if pid > 0:
+                _terminate_pid(pid)
+                append_log(cleanup_log, f"Killed ai-mux process pid: {pid}")
+                print(f"Killed ai-mux PID: {pid}")
+                killed += 1
+            continue
+        if kind == "agent":
+            pid = int(target.get("pid", 0) or 0)
+            if pid > 0:
+                _terminate_pid(pid)
+                append_log(cleanup_log, f"Killed agent pid: {pid}")
+                print(f"Killed agent PID: {pid}")
+                killed += 1
 
     append_log(cleanup_log, f"Manual cleanup complete. killed={killed}")
-    print(f"Cleanup complete. killed={killed}. log={cleanup_log}")
+    print(f"Cleanup complete. cleaned={killed}. log={cleanup_log}")
     return 0
 
 
@@ -1398,6 +1737,12 @@ def _cmd_prompt_edit(scope: str, tool_arg: str = "") -> int:
 
     print("Usage: ai-cli prompt-edit <global|tool> [tool]", file=sys.stderr)
     return 1
+
+
+def _cmd_system_browser(argv: list[str]) -> int:
+    from ai_cli.system_prompts import main as system_prompts_main
+
+    return system_prompts_main(argv)
 
 
 # ---------------------------------------------------------------------------
@@ -1427,19 +1772,13 @@ def main() -> int:
 
     # Management subcommands
     if subcommand == "system":
-        # "ai-cli system prompt [model]" — cat a captured system prompt
+        if len(sys.argv) > 2 and sys.argv[2] == "edit":
+            scope = sys.argv[3] if len(sys.argv) > 3 else "global"
+            tool_name = sys.argv[4] if len(sys.argv) > 4 else ""
+            return _cmd_prompt_edit(scope, tool_name)
         if len(sys.argv) > 2 and sys.argv[2] == "prompt":
-            return _cmd_system_prompt(sys.argv[3] if len(sys.argv) > 3 else "")
-        tool = sys.argv[2] if len(sys.argv) > 2 else ""
-        config = ensure_config()
-        if tool:
-            registry = load_registry()
-            if tool in registry:
-                return edit_instructions(_resolve_tool_prompt_file(config, tool))
-            print(f"Unknown tool: {tool}", file=sys.stderr)
-            print(f"Available: {', '.join(registry.keys())}", file=sys.stderr)
-            return 1
-        return edit_instructions(config.get("instructions_file", ""))
+            return _cmd_system_browser(sys.argv[3:])
+        return _cmd_system_browser(sys.argv[2:])
 
     if subcommand == "prompt-edit":
         scope = sys.argv[2] if len(sys.argv) > 2 else ""
@@ -1451,6 +1790,14 @@ def main() -> int:
 
     if subcommand == "cleanup":
         return cmd_cleanup(sys.argv[2:])
+
+    if subcommand == "canary-capture":
+        from ai_cli.canary_capture import cmd_canary_capture
+        return cmd_canary_capture(sys.argv[2:])
+
+    if subcommand == "canary-seed":
+        from ai_cli.canary_capture import cmd_canary_seed
+        return cmd_canary_seed(sys.argv[2:])
 
     if subcommand in ("session", "history"):
         from ai_cli.session import main as session_main
@@ -1487,11 +1834,12 @@ def main() -> int:
         print("Usage:")
         print("  ai-cli <tool> [DIR] [args...]  Launch a tool (claude, codex, copilot, gemini)")
         print("  ai-cli menu               Interactive tool manager (TUI)")
-        print("  ai-cli system [tool]      Edit system instructions")
+        print("  ai-cli system [opts]      Browse captured system prompts")
+        print("  ai-cli system edit ...    Edit global/tool prompt files")
         print("  ai-cli prompt-edit ...    Edit global/tool prompt files")
-        print("  ai-cli system prompt [model]  Show captured system prompt for a model")
+        print("  ai-cli system prompt [query]  Browse historical or parsed system prompts")
         print("  ai-cli status             Show installed tools and versions")
-        print("  ai-cli cleanup [opts]     Kill stray ai-mux and mitmproxy processes")
+        print("  ai-cli cleanup [opts]     Kill tracked sessions or deep-scan ai-mux/agent processes")
         print("  ai-cli history [opts]     Browse agent conversation history")
         print("  ai-cli traffic [opts]     Browse proxied API traffic")
         print("  ai-cli update [opts]      Install or update wrapped tools")

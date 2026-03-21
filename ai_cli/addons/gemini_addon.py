@@ -24,6 +24,8 @@ if _addon_dir not in sys.path:
 
 from prompt_builder import (  # noqa: E402
     build_guidelines_text,
+    format_prior_user_message,
+    load_canary_thought_raw,
     log,
     register_prompt_options,
     section,
@@ -72,14 +74,102 @@ def _extract_recurring_model_prompt(existing_text: str) -> str:
 def _compose_overwrite_sections(
     guidelines_text: str,
     recurring_model_prompt: str,
+    prior_user_message: str = "",
 ) -> str:
     blocks: list[str] = []
     if guidelines_text:
         blocks.append(guidelines_text)
+
+    prior_msg_block = format_prior_user_message(prior_user_message)
+    if prior_msg_block:
+        blocks.append(prior_msg_block)
+
     recurring = section("RECURRING MODEL PROMPT", recurring_model_prompt)
     if recurring:
         blocks.append(recurring)
     return "\n\n".join(blocks).strip()
+
+
+def _get_last_user_message(container: dict[str, Any]) -> str:
+    contents = container.get("contents", [])
+    if not isinstance(contents, list):
+        return ""
+    for content in reversed(contents):
+        if isinstance(content, dict) and content.get("role") == "user":
+            parts = content.get("parts", [])
+            if isinstance(parts, list):
+                text_parts = []
+                for part in parts:
+                    if isinstance(part, dict) and "text" in part:
+                        text_parts.append(part.get("text", ""))
+                return "\n".join(text_parts)
+    return ""
+
+
+def _parse_canary_thought_part(raw: str) -> dict[str, Any] | None:
+    """Parse a captured Gemini thinking part from the canary thought file.
+
+    Accepts the full JSON blob captured from traffic (including thoughtSignature).
+    The block is passed through verbatim so the encrypted signature is preserved.
+    Returns None only if the content is blank or unparseable.
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    try:
+        block = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(block, dict):
+        return None
+    # Ensure the thought flag is set regardless of what was captured
+    block["thought"] = True
+    return block
+
+
+def _inject_canary_thinking_turn(container: dict[str, Any], thought_part: dict[str, Any]) -> bool:
+    """Prepend a synthetic (user, model-with-thought) turn pair to contents.
+
+    Inserts before the first real user content entry so the model "remembers"
+    having already processed the canary compliance thought in a prior turn.
+    Returns True if injection occurred.
+    """
+    contents = container.get("contents")
+    if not isinstance(contents, list):
+        return False
+    target_signature = thought_part.get("thoughtSignature")
+    if isinstance(target_signature, str) and target_signature:
+        for idx in range(len(contents) - 1):
+            current = contents[idx]
+            nxt = contents[idx + 1]
+            if not (
+                isinstance(current, dict)
+                and current.get("role") == "user"
+                and _get_last_user_message({"contents": [current]}) == "."
+            ):
+                continue
+            if not (isinstance(nxt, dict) and nxt.get("role") == "model"):
+                continue
+            parts = nxt.get("parts", [])
+            if not isinstance(parts, list):
+                continue
+            if any(
+                isinstance(part, dict) and part.get("thoughtSignature") == target_signature
+                for part in parts
+            ):
+                return False
+    first_user_idx = next(
+        (i for i, c in enumerate(contents)
+         if isinstance(c, dict) and c.get("role") == "user"),
+        None,
+    )
+    if first_user_idx is None:
+        return False
+    synthetic_user: dict[str, Any] = {"role": "user", "parts": [{"text": "."}]}
+    synthetic_model: dict[str, Any] = {"role": "model", "parts": [thought_part]}
+    contents.insert(first_user_idx, synthetic_model)
+    contents.insert(first_user_idx, synthetic_user)
+    return True
 
 
 def _merge_text(existing: str, injected: str, mode: str) -> str:
@@ -137,6 +227,8 @@ class GeminiSystemInstructionInjector:
                           "Log full request bodies for debugging.")
         loader.add_option("developer_instructions_mode", str, "overwrite",
                   "Instruction merge mode: overwrite|append|prepend.")
+        loader.add_option("gemini_canary_thought_injection_enabled", bool, True,
+                          "Compatibility shim for older wrapper builds.")
 
     @staticmethod
     def _already_injected(system_instruction: dict[str, Any], text: str) -> bool:
@@ -189,8 +281,27 @@ class GeminiSystemInstructionInjector:
             log(log_file, "Passthrough mode - not injecting")
             return
 
+        # Canary thought injection — insert a synthetic prior thinking turn
+        # so the model "echoes" the captured compliance thought as its own.
+        canary_raw = load_canary_thought_raw()
+        canary_part = _parse_canary_thought_part(canary_raw)
+        canary_injected = False
+        if canary_part is not None:
+            # Resolve container early enough to inject into the right contents[].
+            _canary_container: dict[str, Any] = body
+            if _uses_internal_request_envelope(path):
+                _req = body.get("request")
+                if isinstance(_req, dict):
+                    _canary_container = _req
+            if _inject_canary_thinking_turn(_canary_container, canary_part):
+                canary_injected = True
+                log(log_file, "Addon injected canary thinking turn")
+
         guidelines_text = build_guidelines_text()
         if not guidelines_text:
+            if canary_injected:
+                flow.request.set_text(json.dumps(body))
+                log(log_file, "Addon injected canary thinking turn only")
             log(log_file, "Addon skip: layered sections are empty")
             return
 
@@ -210,12 +321,17 @@ class GeminiSystemInstructionInjector:
         existing = container.get("systemInstruction")
         existing_text = _system_instruction_text(existing)
         recurring_model = _extract_recurring_model_prompt(existing_text)
+        last_user_msg = _get_last_user_message(container)
         overwrite_text = _compose_overwrite_sections(
             guidelines_text,
             recurring_model,
+            prior_user_message=last_user_msg,
         )
         merged = _merge_text(existing_text, overwrite_text, merge_mode)
         if merged == existing_text and existing_text:
+            if canary_injected:
+                flow.request.set_text(json.dumps(body))
+                log(log_file, "Addon preserved canary thinking turn; system instruction unchanged")
             log(log_file, f"Addon skip: system instruction already matches (mode={merge_mode})")
             return
         container["systemInstruction"] = {"parts": [{"text": merged}]}

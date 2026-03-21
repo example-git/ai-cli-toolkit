@@ -2,6 +2,18 @@
 
 from ai_cli.tools import ToolSpec
 
+_COPILOT_INSTALL_STABLE = (
+    "(if command -v curl >/dev/null 2>&1; "
+    "then curl -fsSL https://gh.io/copilot-install; "
+    "else wget -qO- https://gh.io/copilot-install; fi) | bash"
+)
+
+_COPILOT_INSTALL_PRERELEASE = (
+    "(if command -v curl >/dev/null 2>&1; "
+    "then curl -fsSL https://gh.io/copilot-install; "
+    "else wget -qO- https://gh.io/copilot-install; fi) | VERSION=\"prerelease\" bash"
+)
+
 spec = ToolSpec(
     name="copilot",
     display_name="GitHub Copilot CLI",
@@ -12,11 +24,11 @@ spec = ToolSpec(
     protocol="https",
     supports_websocket=False,
     instructions_label="system",
-    install_command="npm install -g @github/copilot-cli",
+    install_command=_COPILOT_INSTALL_STABLE,
     install_methods={
-        "npm": "npm install -g @github/copilot-cli",
-        "brew": "brew install copilot-cli",
+        "stable": _COPILOT_INSTALL_STABLE,
+        "prerelease": _COPILOT_INSTALL_PRERELEASE,
     },
-    preferred_methods=["npm", "brew"],
+    preferred_methods=["stable"],
     version_command=["copilot", "--version"],
 )

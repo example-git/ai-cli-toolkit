@@ -369,74 +369,16 @@ def _select_action_text(actions: list[MenuAction]) -> str:
 
 
 def _browse_system_prompts() -> int:
-    """List captured system prompts and let the user pick one to view."""
-    from ai_cli.addons.system_prompt_addon import _DEFAULT_DB_DIR, _DEFAULT_DB_NAME
-    import sqlite3
+    """Launch the system prompt browser in an isolated subprocess."""
+    python = sys.executable or "python3"
+    repo_root = Path(__file__).resolve().parent.parent
 
-    db_path = _DEFAULT_DB_DIR / _DEFAULT_DB_NAME
-    if not db_path.is_file():
-        print("No system prompts captured yet.", file=sys.stderr)
-        print(f"(Expected database at {db_path})", file=sys.stderr)
-        return 0
+    env = os.environ.copy()
+    current_pp = env.get("PYTHONPATH", "")
+    root_str = str(repo_root)
+    env["PYTHONPATH"] = f"{root_str}{os.pathsep}{current_pp}" if current_pp else root_str
 
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-    rows = conn.execute(
-        "SELECT id, provider, model, role, char_count, seen_count, last_seen "
-        "FROM system_prompts ORDER BY last_seen DESC"
-    ).fetchall()
-    if not rows:
-        print("No system prompts captured yet.", file=sys.stderr)
-        conn.close()
-        return 0
-
-    print(f"{'#':<4} {'Provider':<12} {'Model':<28} {'Role':<14} {'Chars':>7} {'Seen':>5}  Last Seen")
-    print("-" * 110)
-    for idx, r in enumerate(rows, 1):
-        last = (r["last_seen"] or "?")[:19]
-        role = r["role"] or "system"
-        print(f"{idx:<4} {r['provider']:<12} {r['model']:<28} {role:<14} {r['char_count']:>7} {r['seen_count']:>5}  {last}")
-
-    print()
-    try:
-        choice = input("Enter number to view full prompt (blank to cancel): ").strip()
-    except EOFError:
-        conn.close()
-        return 0
-
-    if not choice.isdigit():
-        conn.close()
-        return 0
-
-    index = int(choice) - 1
-    if index < 0 or index >= len(rows):
-        print("Invalid selection.", file=sys.stderr)
-        conn.close()
-        return 1
-
-    row_id = rows[index]["id"]
-    full = conn.execute(
-        "SELECT provider, model, role, content, char_count, first_seen, last_seen, seen_count "
-        "FROM system_prompts WHERE id = ?",
-        (row_id,),
-    ).fetchone()
-    conn.close()
-
-    if not full:
-        print("Prompt not found.", file=sys.stderr)
-        return 1
-
-    print()
-    print(f"Provider: {full['provider']}")
-    print(f"Model:    {full['model']}")
-    print(f"Role:     {full['role'] or 'system'}")
-    print(f"Chars:    {full['char_count']}")
-    print(f"First:    {full['first_seen']}")
-    print(f"Last:     {full['last_seen']}")
-    print(f"Seen:     {full['seen_count']} time(s)")
-    print("─" * 80)
-    print(full["content"])
-    return 0
+    return subprocess.call([python, "-m", "ai_cli", "system", "prompt"], env=env)
 
 
 def _browse_traffic(provider: str = "", api_only: bool = False) -> int:

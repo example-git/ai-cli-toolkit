@@ -88,6 +88,7 @@ def test_get_tool_config_applies_global_fallbacks() -> None:
         "passthrough": True,
         "debug_requests": True,
         "developer_instructions_mode": "overwrite",
+        "canary_thought_injection": True,
     }
 
 

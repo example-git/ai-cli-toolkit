@@ -64,6 +64,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "canary_rule": None,
             "passthrough": False,
             "debug_requests": False,
+            "canary_thought_injection": True,
         },
     },
     "aliases": {
@@ -154,6 +155,7 @@ def get_tool_config(config: dict[str, Any], tool_name: str) -> dict[str, Any]:
             if tool_name == "codex"
             else "overwrite"
         ),
+        "canary_thought_injection": bool(tool.get("canary_thought_injection", True)),
     }
 
 

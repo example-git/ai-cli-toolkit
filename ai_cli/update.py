@@ -3,18 +3,48 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
+from pathlib import Path
 from typing import Optional
 
-from ai_cli.config import ensure_config, get_tool_config
+from ai_cli.config import ensure_config, get_tool_config, save_config
 from ai_cli.tools import load_registry
 
+homedir = os.environ.get("HOME", "")
+
+userpath = os.environ.get("PATH", "")
+nvm_path = Path(f"{homedir}/.nvm/nvm.sh").expanduser()
+nvm_present = nvm_path.is_file()
+ALIAS_DIR = str(Path(f"{homedir}/.ai-cli/bin").expanduser())
+
+def _path_without_alias_dir(path_value: str | None = None) -> str:
+    """Return PATH with the ai-cli alias directory removed."""
+    raw = path_value if path_value is not None else os.environ.get("PATH", "")
+    dirs = [d for d in raw.split(os.pathsep) if d != ALIAS_DIR]
+    return os.pathsep.join(dirs)
+
+moddedpath = _path_without_alias_dir(userpath)
 
 def _run_shell(command: str) -> tuple[int, str]:
-    """Run a shell command and return (exit_code, combined_output)."""
+    """Run a shell command and return (exit_code, combined_output).
+
+    Strips the ai-cli alias directory from PATH *inside* the shell so
+    that ``bash -lc`` (which re-sources the profile) doesn't resolve
+    tool names to the ai-cli wrapper instead of the real binary.
+    """
+    # Inject a PATH cleanup at the head of the command so it takes
+    # effect even after bash's login-profile re-adds the alias dir.
+    sanitised = (
+        f'export PATH=f"{moddedpath}:{ALIAS_DIR}"; '
+	f'{f"source {nvm_path} if nvm_present else ''"}; '
+        f'{command}'
+    )
+    
+
     result = subprocess.run(
-        ["bash", "-lc", command],
+        ["bash", "-lc", sanitised],
         check=False,
         capture_output=True,
         text=True,
@@ -38,6 +68,14 @@ def _regenerate_completions() -> None:
         print(f"Warning: could not regenerate completions: {exc}", file=sys.stderr)
 
 
+def _persist_managed_binary(config: dict, tool_name: str, binary: str) -> None:
+    """Persist a managed binary path into tool config."""
+    tools = config.setdefault("tools", {})
+    tool_cfg = tools.setdefault(tool_name, {})
+    tool_cfg["binary"] = binary
+    save_config(config)
+
+
 def update_tool(tool_name: str, dry_run: bool = False, method: Optional[str] = None,
                 regen_completions: bool = True) -> int:
     """Install or update one tool using its ToolSpec install command."""
@@ -47,6 +85,15 @@ def update_tool(tool_name: str, dry_run: bool = False, method: Optional[str] = N
         print(f"Unknown tool: {tool_name}", file=sys.stderr)
         return 1
 
+    if method and method not in spec.install_methods:
+        available = ", ".join(spec.install_methods.keys()) or "(none)"
+        print(
+            f"Unknown install method '{method}' for {tool_name}. "
+            f"Available: {available}",
+            file=sys.stderr,
+        )
+        return 1
+
     # Resolve method (explicit, auto-detected, or default)
     effective_method = method
     if not effective_method and spec.install_methods:
@@ -54,14 +101,7 @@ def update_tool(tool_name: str, dry_run: bool = False, method: Optional[str] = N
 
     command = (spec.get_install_command(method) or "").strip()
     if not command:
-        if method:
-            available = ", ".join(spec.install_methods.keys()) or "(none)"
-            print(
-                f"Unknown install method '{method}' for {tool_name}. "
-                f"Available: {available}",
-                file=sys.stderr,
-            )
-        else:
+        if not method:
             print(f"No install/update command configured for {tool_name}.", file=sys.stderr)
         return 1
 
@@ -85,6 +125,13 @@ def update_tool(tool_name: str, dry_run: bool = False, method: Optional[str] = N
     if code != 0:
         print(f"{tool_name}: command failed with exit code {code}", file=sys.stderr)
         return code
+
+    managed_binary = spec.managed_binary
+    if managed_binary:
+        managed_path = Path(spec.resolve_binary(managed_binary))
+        if managed_path.is_file():
+            _persist_managed_binary(config, tool_name, managed_binary)
+            tool_cfg["binary"] = managed_binary
 
     installed_after = spec.detect_installed(tool_cfg.get("binary", ""))
     version_after = spec.get_version(tool_cfg.get("binary", "")) if installed_after else None

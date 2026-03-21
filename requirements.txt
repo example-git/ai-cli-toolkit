@@ -1,3 +1,4 @@
 mitmproxy>=12.1.2
 shtab>=1.7
 bcrypt>=4.1
+prompt_toolkit>=3.0.43

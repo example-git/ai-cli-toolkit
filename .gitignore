@@ -21,6 +21,8 @@ venv/
 *.swp
 *.swo
 *~
+*.txt
+*.md
 
 # macOS
 .DS_Store

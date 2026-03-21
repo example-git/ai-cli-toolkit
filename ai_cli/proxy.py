@@ -405,6 +405,10 @@ def build_mitmdump_cmd(
     developer_instructions_mode: str = "",
     rewrite_test_tag: str = "",
     codex_developer_prompt_file: str = "",
+    codex_personality_file: str = "",
+    gemini_canary_thought_injection_enabled: bool | None = None,
+    canary_thought_injection_enabled: bool | None = None,
+    canary_thought_file: str = "",
     traffic_caller: str = "",
     traffic_max_age_days: int = 0,
     traffic_redact: bool = True,
@@ -461,6 +465,16 @@ def build_mitmdump_cmd(
         cmd.extend(["--set", f"rewrite_test_tag={rewrite_test_tag}"])
     if codex_developer_prompt_file:
         cmd.extend(["--set", f"codex_developer_prompt_file={codex_developer_prompt_file}"])
+    if codex_personality_file:
+        cmd.extend(["--set", f"codex_personality_file={codex_personality_file}"])
+    if gemini_canary_thought_injection_enabled is not None:
+        enabled_value = "true" if gemini_canary_thought_injection_enabled else "false"
+        cmd.extend(["--set", f"gemini_canary_thought_injection_enabled={enabled_value}"])
+    if canary_thought_injection_enabled is not None:
+        enabled_value = "true" if canary_thought_injection_enabled else "false"
+        cmd.extend(["--set", f"canary_thought_injection_enabled={enabled_value}"])
+    if canary_thought_file:
+        cmd.extend(["--set", f"canary_thought_file={canary_thought_file}"])
     if traffic_caller:
         cmd.extend(["--set", f"traffic_caller={traffic_caller}"])
     if traffic_max_age_days > 0:

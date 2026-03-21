@@ -51,6 +51,32 @@ def log(path_value: str, message: str) -> None:
         pass
 
 
+def format_prior_user_message(text: str) -> str:
+    """Format the prior user message for system prompt injection."""
+    content = (text or "").strip()
+    if not content:
+        return ""
+    # Truncate/skip if too long (log dump heuristic)
+    if len(content) > 2000:
+        return ""
+
+    return f"""<PRIOR USER MESSAGE>
+============= IF TROUBLESHOOTING DO NOT PRIORITIZE YOUR THOUGHT OVER THIS IF ITS A HINT OR DIRECTION ================
+{content}
+=============================================
+</PROMPT USER MESSAGE>"""
+
+
+def load_canary_thought_raw() -> str:
+    """Return the raw canary thought file contents, or "" if disabled/absent."""
+    if not load_bool_option("canary_thought_injection_enabled"):
+        return ""
+    thought_file = load_option("canary_thought_file")
+    if not thought_file:
+        return ""
+    return read_text_file(Path(thought_file).expanduser())
+
+
 def section(tag: str, text: str) -> str:
     body = (text or "").strip()
     if not body:
@@ -147,6 +173,10 @@ def register_prompt_options(loader: Any) -> None:
                       "Whether literal tool instruction text was explicitly provided.")
     loader.add_option("canary_rule", str, "",
                       "Canary instruction prepended before system instructions.")
+    loader.add_option("canary_thought_injection_enabled", bool, True,
+                      "Inject pre-captured canary thought as a compliance seed.")
+    loader.add_option("canary_thought_file", str, "",
+                      "Path to the static canary thought text file (captured from traffic logs).")
 
 
 # ---------------------------------------------------------------------------

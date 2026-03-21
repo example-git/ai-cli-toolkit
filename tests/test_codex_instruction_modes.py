@@ -98,6 +98,42 @@ def test_build_mitmdump_cmd_preserves_explicit_empty_inline_override() -> None:
     assert "system_instructions_text_explicit=true" in cmd
 
 
+def test_parse_wrapper_overrides_reads_personality_injection_file() -> None:
+    remaining, overrides = parse_wrapper_overrides(
+        [
+            "--ai-cli-gemini-canary-thought-injection",
+            "off",
+            "--flag-for-tool",
+        ]
+    )
+    assert remaining == ["--flag-for-tool"]
+    assert overrides["gemini_canary_thought_injection"] == "off"
+
+
+def test_build_mitmdump_cmd_sets_personality_injection_options() -> None:
+    cmd = build_mitmdump_cmd(
+        mitmdump_bin="mitmdump",
+        host="127.0.0.1",
+        port=8080,
+        addon_paths=["/tmp/addon.py"],
+        target_path="/backend-api/codex/responses",
+        wrapper_log_file="/tmp/wrapper.log",
+        codex_personality_file="/tmp/personality.txt",
+    )
+    assert "codex_personality_file=/tmp/personality.txt" in cmd
+
+    cmd2 = build_mitmdump_cmd(
+        mitmdump_bin="mitmdump",
+        host="127.0.0.1",
+        port=8080,
+        addon_paths=["/tmp/addon.py"],
+        target_path="/v1internal:generateContent",
+        wrapper_log_file="/tmp/wrapper.log",
+        gemini_canary_thought_injection_enabled=False,
+    )
+    assert "gemini_canary_thought_injection_enabled=false" in cmd2
+
+
 def test_parse_wrapper_overrides_rejects_invalid_developer_mode() -> None:
     with pytest.raises(SystemExit):
         parse_wrapper_overrides(

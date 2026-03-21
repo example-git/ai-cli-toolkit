@@ -19,6 +19,8 @@ if _addon_dir not in sys.path:
 
 from prompt_builder import (  # noqa: E402
     build_guidelines_text,
+    format_prior_user_message,
+    load_canary_thought_raw,
     log,
     register_prompt_options,
     section,
@@ -48,14 +50,109 @@ def _extract_recurring_model_prompt(existing_text: str) -> str:
 def _compose_overwrite_sections(
     guidelines_text: str,
     recurring_model_prompt: str,
+    prior_user_message: str = "",
 ) -> str:
     blocks: list[str] = []
     if guidelines_text:
         blocks.append(guidelines_text)
+
+    prior_msg_block = format_prior_user_message(prior_user_message)
+    if prior_msg_block:
+        blocks.append(prior_msg_block)
+
     recurring = section("RECURRING MODEL PROMPT", recurring_model_prompt)
     if recurring:
         blocks.append(recurring)
     return "\n\n".join(blocks).strip()
+
+
+def _get_last_user_message(body: dict[str, Any]) -> str:
+    messages = body.get("messages", [])
+    if not isinstance(messages, list):
+        return ""
+    for msg in reversed(messages):
+        if isinstance(msg, dict) and msg.get("role") == "user":
+            content = msg.get("content", "")
+            if isinstance(content, str):
+                return content
+            elif isinstance(content, list):
+                # Handle list content (e.g. text blocks)
+                text_parts = []
+                for part in content:
+                    if isinstance(part, dict) and part.get("type") == "text":
+                        text_parts.append(part.get("text", ""))
+                return "\n".join(text_parts)
+    return ""
+
+
+def _parse_canary_thought_block(raw: str) -> dict[str, Any] | None:
+    """Parse a captured thinking block from the canary thought file.
+
+    Accepts a JSON object with at minimum {"type": "thinking", "thinking": "..."}
+    and optionally a "signature" field (the encrypted blob captured from traffic).
+    Returns None if the raw content is not a valid thinking block.
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    try:
+        block = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(block, dict):
+        return None
+    if block.get("type") != "thinking":
+        return None
+    if not isinstance(block.get("thinking"), str):
+        return None
+    return block
+
+
+def _inject_canary_thinking_turn(messages: list[Any], thinking_block: dict[str, Any]) -> bool:
+    """Prepend a synthetic (user, assistant-with-thinking) turn pair.
+
+    Inserts the synthetic pair before the *first* real user message so the
+    model "remembers" having already processed the canary compliance thought
+    in a prior turn.  Returns True if injection occurred.
+    """
+    target_signature = thinking_block.get("signature")
+    if isinstance(target_signature, str) and target_signature:
+        for idx in range(len(messages) - 1):
+            current = messages[idx]
+            nxt = messages[idx + 1]
+            if not (
+                isinstance(current, dict)
+                and current.get("role") == "user"
+                and _get_last_user_message({"messages": [current]}) == "."
+            ):
+                continue
+            if not (isinstance(nxt, dict) and nxt.get("role") == "assistant"):
+                continue
+            content = nxt.get("content")
+            if not isinstance(content, list):
+                continue
+            if any(
+                isinstance(block, dict) and block.get("signature") == target_signature
+                for block in content
+            ):
+                return False
+    first_user_idx = next(
+        (i for i, m in enumerate(messages) if isinstance(m, dict) and m.get("role") == "user"),
+        None,
+    )
+    if first_user_idx is None:
+        return False
+    synthetic_user: dict[str, Any] = {
+        "role": "user",
+        "content": [{"type": "text", "text": "."}],
+    }
+    synthetic_asst: dict[str, Any] = {
+        "role": "assistant",
+        "content": [thinking_block],
+    }
+    messages.insert(first_user_idx, synthetic_asst)
+    messages.insert(first_user_idx, synthetic_user)
+    return True
 
 
 def _merge_text(existing: str, injected: str, mode: str) -> str:
@@ -146,8 +243,24 @@ if True:  # always define — mitmproxy loads this as a module
                 log(log_file, "Passthrough mode - not injecting")
                 return
 
+            # Canary thought injection — insert a synthetic prior thinking turn
+            # so the model "echoes" the captured compliance thought as its own.
+            canary_raw = load_canary_thought_raw()
+            canary_block = _parse_canary_thought_block(canary_raw)
+            canary_injected = False
+            if canary_block is not None:
+                messages = body.get("messages")
+                if isinstance(messages, list):
+                    injected_canary = _inject_canary_thinking_turn(messages, canary_block)
+                    if injected_canary:
+                        canary_injected = True
+                        log(log_file, "Addon injected canary thinking turn")
+
             guidelines_text = build_guidelines_text()
             if not guidelines_text:
+                if canary_injected:
+                    flow.request.set_text(json.dumps(body))
+                    log(log_file, "Addon injected canary thinking turn only")
                 log(log_file, "Addon skip: layered sections are empty")
                 return
 
@@ -163,6 +276,9 @@ if True:  # always define — mitmproxy loads this as a module
                     pass
 
             if existing_system is None:
+                if canary_injected:
+                    flow.request.set_text(json.dumps(body))
+                    log(log_file, "Addon injected canary thinking turn without system rewrite")
                 log(log_file, "Addon skip: no system field (internal request)")
                 return
             elif isinstance(existing_system, str):
@@ -171,12 +287,17 @@ if True:  # always define — mitmproxy loads this as a module
                     return
                 _save_backup(existing_system)
                 recurring_model = _extract_recurring_model_prompt(existing_system)
+                last_user_msg = _get_last_user_message(body)
                 overwrite_text = _compose_overwrite_sections(
                     guidelines_text,
                     recurring_model,
+                    prior_user_message=last_user_msg,
                 )
                 merged = _merge_text(existing_system, overwrite_text, merge_mode)
                 if merged == existing_system:
+                    if canary_injected:
+                        flow.request.set_text(json.dumps(body))
+                        log(log_file, "Addon preserved canary thinking turn; system already current")
                     log(log_file, f"Addon skip: system already matches (mode={merge_mode})")
                     return
                 body["system"] = merged
@@ -203,12 +324,17 @@ if True:  # always define — mitmproxy loads this as a module
                 original_text = target_block.get("text", "")
                 _save_backup(existing_text)
                 recurring_model = _extract_recurring_model_prompt(original_text)
+                last_user_msg = _get_last_user_message(body)
                 overwrite_text = _compose_overwrite_sections(
                     guidelines_text,
                     recurring_model,
+                    prior_user_message=last_user_msg,
                 )
                 merged = _merge_text(original_text, overwrite_text, merge_mode)
                 if merged == original_text:
+                    if canary_injected:
+                        flow.request.set_text(json.dumps(body))
+                        log(log_file, "Addon preserved canary thinking turn; block already current")
                     log(log_file, f"Addon skip: block already matches (mode={merge_mode})")
                     return
                 target_block["text"] = merged

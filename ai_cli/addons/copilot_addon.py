@@ -19,6 +19,7 @@ if _addon_dir not in sys.path:
 
 from prompt_builder import (  # noqa: E402
     build_guidelines_text,
+    format_prior_user_message,
     log,
     register_prompt_options,
     section,
@@ -48,10 +49,16 @@ def _extract_recurring_model_prompt(existing_text: str) -> str:
 def _compose_overwrite_sections(
     guidelines_text: str,
     recurring_model_prompt: str,
+    prior_user_message: str = "",
 ) -> str:
     blocks: list[str] = []
     if guidelines_text:
         blocks.append(guidelines_text)
+
+    prior_msg_block = format_prior_user_message(prior_user_message)
+    if prior_msg_block:
+        blocks.append(prior_msg_block)
+
     recurring = section("RECURRING MODEL PROMPT", recurring_model_prompt)
     if recurring:
         blocks.append(recurring)
@@ -95,6 +102,16 @@ def _extract_message_text(message: dict[str, Any]) -> str:
 
 def _set_message_text(message: dict[str, Any], text: str) -> None:
     message["content"] = text
+
+
+def _get_last_user_message(body: dict[str, Any]) -> str:
+    messages = body.get("messages", [])
+    if not isinstance(messages, list):
+        return ""
+    for msg in reversed(messages):
+        if isinstance(msg, dict) and msg.get("role") == "user":
+            return _extract_message_text(msg)
+    return ""
 
 
 
@@ -190,7 +207,12 @@ class SystemInstructionInjector:
                 break
 
         if first_system_idx < 0:
-            overwrite_text = _compose_overwrite_sections(guidelines_text, "")
+            last_user_msg = _get_last_user_message(body)
+            overwrite_text = _compose_overwrite_sections(
+                guidelines_text,
+                "",
+                prior_user_message=last_user_msg,
+            )
             if not overwrite_text:
                 log(log_file, "Addon skip: overwrite text is empty")
                 return
@@ -202,9 +224,11 @@ class SystemInstructionInjector:
                 return
             existing_text = _extract_message_text(first_message)
             recurring_model = _extract_recurring_model_prompt(existing_text)
+            last_user_msg = _get_last_user_message(body)
             overwrite_text = _compose_overwrite_sections(
                 guidelines_text,
                 recurring_model,
+                prior_user_message=last_user_msg,
             )
             merged = _merge_text(existing_text, overwrite_text, merge_mode)
             if merged == existing_text:
