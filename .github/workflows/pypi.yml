@@ -22,7 +22,7 @@ jobs:
 
     permissions:
       id-token: write   # mandatory for PyPI trusted publishing
-      contents: write   # (optional) if you later add release creation
+      contents: write   # needed for GitHub Release creation
 
     steps:
       - name: Checkout repository
@@ -61,17 +61,25 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
 
+      - name: Stamp version into pyproject.toml
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.versioning.outputs.version }}"
+          echo "Setting version to $VERSION in pyproject.toml"
+          sed -i "s/^version = .*/version = \"$VERSION\"/" pyproject.toml
+          echo "--- pyproject.toml (version line) ---"
+          grep '^version' pyproject.toml
+
       - name: Preflight - skip if version already exists on PyPI
+        id: preflight
         shell: bash
         run: |
           set -euo pipefail
           VERSION="${{ steps.versioning.outputs.version }}"
 
-          python - "$VERSION" <<'PY'
-          import json
-          import sys
-          import urllib.request
-          import urllib.error
+          SKIP=$(python - "$VERSION" <<'PY'
+          import json, sys, urllib.request, urllib.error
 
           version = sys.argv[1]
           url = "https://pypi.org/pypi/ai-cli-toolkit/json"
@@ -80,22 +88,43 @@ jobs:
             with urllib.request.urlopen(url, timeout=20) as r:
               data = json.load(r)
           except urllib.error.HTTPError as e:
-            # If the project doesn't exist yet, proceed with publish.
             if e.code == 404:
-              print("PyPI project not found yet; proceeding.")
+              print("false")
               sys.exit(0)
             raise
 
           releases = data.get("releases", {})
           if version in releases and releases[version]:
-            print(f"Version {version} already exists on PyPI; skipping publish.")
-            sys.exit(0)
-
-          print(f"Version {version} not present on PyPI; proceeding.")
+            print("true")
+          else:
+            print("false")
           PY
+          )
+
+          echo "skip=$SKIP" >> "$GITHUB_OUTPUT"
+          if [[ "$SKIP" == "true" ]]; then
+            echo "⚠️  Version $VERSION already exists on PyPI; will skip publish."
+          else
+            echo "✅ Version $VERSION not on PyPI; proceeding."
+          fi
 
       - name: Build a binary wheel and a source tarball
+        if: steps.preflight.outputs.skip != 'true'
         run: python -m build
 
+      - name: Create GitHub Release
+        if: steps.preflight.outputs.skip != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v${{ steps.versioning.outputs.version }}"
+          name: "v${{ steps.versioning.outputs.version }}"
+          body: "Release v${{ steps.versioning.outputs.version }}"
+          draft: false
+          prerelease: false
+          files: dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Publish distribution to PyPI
+        if: steps.preflight.outputs.skip != 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
